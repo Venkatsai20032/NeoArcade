@@ -1,0 +1,27 @@
+services:
+  neo-tic-arena:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neo-tic-arena
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DATABASE_PATH=/app/data/arena_game.db
+    volumes:
+      # Persist SQLite player profiles and match logs across container updates
+      - arena-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/network-info"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  arena-data:
+    driver: local

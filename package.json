@@ -1,0 +1,30 @@
+{
+  "name": "neo-tic-arena",
+  "version": "1.0.0",
+  "description": "Cinematic real-time multiplayer Tic-Tac-Toe arena with same Wi-Fi connectivity, 3-round tournament rules, clash replay, and SQLite persistence",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "docker:build": "docker build -t neo-tic-arena .",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "keywords": [
+    "tic-tac-toe",
+    "multiplayer",
+    "socket.io",
+    "realtime",
+    "wifi-gaming",
+    "cinematic",
+    "sqlite"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.3"
+  }
+}
