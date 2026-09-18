@@ -93,6 +93,10 @@ function broadcastLobby() {
   io.emit('lobby:update', playersList);
 }
 
+function generateMatchId() {
+  return 'arena_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+}
+
 const WIN_COMBOS = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8], // Horizontal
   [0, 3, 6], [1, 4, 7], [2, 5, 8], // Vertical
@@ -206,7 +210,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const challengeId = 'chal_' + Date.now();
+    const challengeId = 'chal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     senderSession.status = 'in_challenge';
     targetSession.status = 'in_challenge';
     broadcastLobby();
@@ -287,7 +291,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const matchId = 'arena_' + Date.now();
+    const matchId = generateMatchId();
     const roomName = `room_${matchId}`;
 
     senderSession.status = 'in_battle';
@@ -465,7 +469,10 @@ io.on('connection', (socket) => {
       const hasChampionshipWinner = (p1Score >= 2 || p2Score >= 2 || match.currentRound >= 3);
 
       if (hasChampionshipWinner) {
-        setTimeout(() => {
+        if (match.conclusionTimer) {
+          clearTimeout(match.conclusionTimer);
+        }
+        match.conclusionTimer = setTimeout(() => {
           concludeTournament(match);
         }, 3200);
       } else {
@@ -550,7 +557,14 @@ io.on('connection', (socket) => {
 
   // Conclude tournament helper
   function concludeTournament(match) {
+    if (!match || match.concluded || match.status === 'match_over') return;
+    match.concluded = true;
     match.status = 'match_over';
+    if (match.conclusionTimer) {
+      clearTimeout(match.conclusionTimer);
+      match.conclusionTimer = null;
+    }
+
     const p1Score = match.scores[match.p1.id];
     const p2Score = match.scores[match.p2.id];
 
@@ -565,17 +579,24 @@ io.on('connection', (socket) => {
       tournamentWinnerName = match.p2.username;
     }
 
-    // Save match & achievements in SQLite database
-    const dbResult = db.recordMatch({
-      matchId: match.id,
-      p1: match.p1,
-      p2: match.p2,
-      p1Score,
-      p2Score,
-      winnerId: tournamentWinnerId,
-      clashesCount: match.clashesCount,
-      roundsPlayed: match.roundsPlayed
-    });
+    // Save match & achievements in SQLite database safely
+    let dbResult = null;
+    try {
+      dbResult = db.recordMatch({
+        matchId: match.id,
+        p1: match.p1,
+        p2: match.p2,
+        p1Score,
+        p2Score,
+        winnerId: tournamentWinnerId,
+        clashesCount: match.clashesCount,
+        roundsPlayed: match.roundsPlayed
+      });
+    } catch (err) {
+      console.error('[ARENA] Error recording match to DB:', err);
+    }
+
+    if (!dbResult) return;
 
     // Update sessions in memory
     const s1 = connectedUsers.get(match.p1.id);
@@ -601,7 +622,12 @@ io.on('connection', (socket) => {
   // 7. Surrender / Resign
   socket.on('game:resign', ({ matchId }) => {
     const match = activeMatches.get(matchId);
-    if (!match || match.status === 'match_over') return;
+    if (!match || match.status === 'match_over' || match.concluded) return;
+
+    if (match.conclusionTimer) {
+      clearTimeout(match.conclusionTimer);
+      match.conclusionTimer = null;
+    }
 
     const resigningUserId = socketToUser.get(socket.id);
     const winningUserId = resigningUserId === match.p1.id ? match.p2.id : match.p1.id;
@@ -627,7 +653,13 @@ io.on('connection', (socket) => {
     const p2Voted = match.rematchVotes[match.p2.id];
 
     if (p1Voted && p2Voted) {
-      // Both want rematch! Reset match state
+      // Both want rematch! Reset match state with a NEW unique matchId
+      const oldMatchId = match.id;
+      const newMatchId = generateMatchId();
+
+      activeMatches.delete(oldMatchId);
+
+      match.id = newMatchId;
       match.currentRound = 1;
       match.roundName = 'ROUND 1';
       match.scores = { [match.p1.id]: 0, [match.p2.id]: 0 };
@@ -636,6 +668,13 @@ io.on('connection', (socket) => {
       match.rematchVotes = {};
       match.board = Array(9).fill(null);
       match.status = 'connected';
+      match.concluded = false;
+      if (match.conclusionTimer) {
+        clearTimeout(match.conclusionTimer);
+        match.conclusionTimer = null;
+      }
+
+      activeMatches.set(newMatchId, match);
 
       io.to(match.roomName).emit('game:rematch_agreed', {
         matchId: match.id,
@@ -666,6 +705,10 @@ io.on('connection', (socket) => {
 
     const match = activeMatches.get(matchId);
     if (match) {
+      if (match.conclusionTimer) {
+        clearTimeout(match.conclusionTimer);
+        match.conclusionTimer = null;
+      }
       io.to(match.roomName).emit('game:player_exited', { userId });
       activeMatches.delete(matchId);
     }
@@ -697,6 +740,10 @@ io.on('connection', (socket) => {
       // Handle ongoing matches
       for (const [mId, match] of activeMatches.entries()) {
         if (match.p1.id === userId || match.p2.id === userId) {
+          if (match.conclusionTimer) {
+            clearTimeout(match.conclusionTimer);
+            match.conclusionTimer = null;
+          }
           io.to(match.roomName).emit('game:player_disconnected', {
             disconnectedUserId: userId,
             message: 'Opponent disconnected from the arena.'

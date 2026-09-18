@@ -14,8 +14,10 @@
   <!-- Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
   
-  <!-- Socket.io -->
-  <script src="/socket.io/socket.io.js"></script>
+  <!-- Socket.io with Static CDN Fallback for GitHub Pages -->
+  <script src="/socket.io/socket.io.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.8.1/socket.io.min.js';"></script>
+  <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
   <!-- Ambient Particle Canvas -->
@@ -37,8 +39,8 @@
           <span class="pulse-dot"></span>
           <span class="btn-text">📶 Wi-Fi Connect</span>
         </button>
-        <button id="sound-toggle-btn" class="cyber-btn icon-btn sm" title="Toggle Sound">
-          🔊
+        <button id="sound-toggle-btn" class="cyber-btn icon-btn sm" title="Sound Muted by Default (Click to toggle)">
+          🔇
         </button>
         <div id="user-header-pill" class="user-pill hidden">
           <span class="user-pill-avatar" id="header-avatar">🥷</span>
@@ -100,6 +102,15 @@
             <button type="submit" id="btn-enter-arena" class="cyber-btn lg neon-primary w-full">
               ENTER COMBAT ARENA ➔
             </button>
+
+            <div class="register-quick-actions" style="display: flex; gap: 8px; margin-top: 12px;">
+              <button type="button" id="btn-quick-ai-reg" class="cyber-btn sm neon-green flex-1" style="font-size: 11px; padding: 8px 6px;" title="Instantly battle tactical AI bot">
+                🤖 Quick VS Cyber AI
+              </button>
+              <button type="button" id="btn-quick-pass-reg" class="cyber-btn sm neon-cyan flex-1" style="font-size: 11px; padding: 8px 6px;" title="Pass & play on this device">
+                👥 Pass & Play Duel
+              </button>
+            </div>
           </form>
         </div>
       </section>
@@ -140,6 +151,21 @@
               <div class="stat-val text-gold" id="lobby-stat-rate">0%</div>
               <div class="stat-lbl">WIN RATE</div>
             </div>
+        </div>
+
+        <!-- Combat Modes Quick Bar (Online LAN, Offline AI, Local Duel, and P2P) -->
+        <div class="combat-modes-bar cyber-panel">
+          <div class="modes-label">⚡ SELECT COMBAT PROTOCOL:</div>
+          <div class="modes-group">
+            <button id="btn-play-ai" class="cyber-btn sm neon-primary" title="Play against Tactical AI Bot (Works on GitHub Pages & Offline)">
+              🤖 Battle Cyber AI
+            </button>
+            <button id="btn-pass-play" class="cyber-btn sm neon-cyan" title="2 Players Duel on Same Screen">
+              👥 Pass & Play (Local)
+            </button>
+            <button id="btn-p2p-room" class="cyber-btn sm neon-magenta" title="Serverless P2P WebRTC Over Internet (Works on GitHub Pages)">
+              🌐 P2P Online Room
+            </button>
           </div>
         </div>
 
@@ -480,6 +506,7 @@
     </div>
 
     <!-- WI-FI QUICK CONNECT MODAL -->
+    <!-- WI-FI QUICK CONNECT MODAL -->
     <div id="modal-wifi-info" class="cinematic-modal-overlay hidden">
       <div class="cyber-panel wifi-modal-panel">
         <div class="panel-header-row">
@@ -499,6 +526,32 @@
 
         <div class="wifi-tips">
           <p>💡 <strong>Mobile Play:</strong> Open your smartphone camera, scan the QR code above, and join directly in your mobile browser without installing any app!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- P2P WEBRTC ONLINE ROOM MODAL (For Static GitHub Pages Play) -->
+    <div id="modal-p2p-room" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel wifi-modal-panel">
+        <div class="panel-header-row">
+          <h3>🌐 P2P ONLINE ROOM (SERVERLESS)</h3>
+          <button id="btn-close-p2p" class="close-x-btn">✕</button>
+        </div>
+        <p class="modal-intro">Connect directly with a friend anywhere in the world over WebRTC (No backend server required):</p>
+        
+        <div style="display:flex;flex-direction:column;gap:16px;margin:16px 0;">
+          <div style="background:rgba(0,0,0,0.35);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-glow);text-align:center;">
+            <div style="font-size:11px;color:#94a3b8;letter-spacing:1px;">YOUR ROOM CODE</div>
+            <div id="p2p-my-code-display" style="font-family:var(--font-display);font-size:24px;font-weight:900;color:var(--neon-cyan);margin:6px 0;letter-spacing:3px;">INITIALIZING...</div>
+            <button id="btn-copy-p2p-link" class="cyber-btn sm neon-green w-full">📋 Copy Invite Link</button>
+          </div>
+
+          <div style="text-align:center;color:#64748b;font-family:var(--font-hud);font-size:12px;font-weight:700;">— OR JOIN A FRIEND'S CODE —</div>
+
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="p2p-input-code" placeholder="Enter 4-letter Code" maxlength="12" style="flex:1;background:rgba(0,0,0,0.4);border:1px solid var(--border-dim);border-radius:var(--radius-sm);color:#fff;padding:8px 12px;font-family:var(--font-display);font-size:14px;text-transform:uppercase;" />
+            <button id="btn-connect-p2p" class="cyber-btn sm neon-primary">⚡ Connect</button>
+          </div>
         </div>
       </div>
     </div>

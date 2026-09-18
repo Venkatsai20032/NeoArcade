@@ -1,7 +1,30 @@
 // NEO-TIC: TACTICAL ARENA - MAIN CLIENT APPLICATION
+// Supports Online Wi-Fi Mode, Static/Offline AI Combat, Local Duel, and P2P WebRTC
 
 (function() {
-  const socket = io();
+  const isStaticHost = window.location.hostname.includes('github.io') || window.location.protocol === 'file:';
+  let socket = null;
+  try {
+    if (typeof io !== 'undefined') {
+      socket = io({
+        autoConnect: !isStaticHost,
+        reconnectionAttempts: 3,
+        timeout: 4000
+      });
+    }
+  } catch (e) {
+    console.warn('Socket connection skipped in static mode:', e);
+  }
+
+  // Safe fallback dummy socket if io is not loaded or null
+  if (!socket) {
+    socket = {
+      connected: false,
+      on: () => {},
+      off: () => {},
+      emit: () => {}
+    };
+  }
 
   // Avatar Emojis Map
   const AVATARS = {
@@ -36,7 +59,8 @@
     countdown: document.getElementById('overlay-countdown'),
     clash: document.getElementById('overlay-clash'),
     victory: document.getElementById('modal-victory'),
-    wifi: document.getElementById('modal-wifi-info')
+    wifi: document.getElementById('modal-wifi-info'),
+    p2pRoom: document.getElementById('modal-p2p-room')
   };
 
   function showScreen(screenKey) {
@@ -159,22 +183,45 @@
     const username = document.getElementById('reg-username').value.trim();
     if (!username) return;
 
-    socket.emit('user:register', {
-      username,
-      avatar: selectedAvatar
+    if (socket && socket.connected) {
+      socket.emit('user:register', {
+        username,
+        avatar: selectedAvatar
+      });
+    } else {
+      // Offline / Static Hosting Registration
+      const user = {
+        id: localStorage.getItem('neo_tic_user_id') || 'local_' + Math.random().toString(36).substring(2, 8),
+        username,
+        avatar: selectedAvatar,
+        wins: parseInt(localStorage.getItem('neo_tic_wins') || '0', 10),
+        losses: parseInt(localStorage.getItem('neo_tic_losses') || '0', 10),
+        draws: parseInt(localStorage.getItem('neo_tic_draws') || '0', 10),
+        rating: parseInt(localStorage.getItem('neo_tic_rating') || '1000', 10)
+      };
+      currentUser = user;
+      localStorage.setItem('neo_tic_user_id', user.id);
+      localStorage.setItem('neo_tic_username', user.username);
+      localStorage.setItem('neo_tic_avatar', user.avatar);
+
+      updateUserProfileUI();
+      showScreen('lobby');
+      showToast('⚡ Standalone Mode: Play vs Cyber AI, Local Duel, or P2P WebRTC!');
+    }
+  });
+
+  if (socket) {
+    socket.on('user:registered', ({ user }) => {
+      currentUser = user;
+      localStorage.setItem('neo_tic_user_id', user.id);
+      localStorage.setItem('neo_tic_username', user.username);
+      localStorage.setItem('neo_tic_avatar', user.avatar);
+
+      updateUserProfileUI();
+      showScreen('lobby');
+      loadLeaderboardAndHistory();
     });
-  });
-
-  socket.on('user:registered', ({ user }) => {
-    currentUser = user;
-    localStorage.setItem('neo_tic_user_id', user.id);
-    localStorage.setItem('neo_tic_username', user.username);
-    localStorage.setItem('neo_tic_avatar', user.avatar);
-
-    updateUserProfileUI();
-    showScreen('lobby');
-    loadLeaderboardAndHistory();
-  });
+  }
 
   function updateUserProfileUI() {
     if (!currentUser) return;
@@ -246,23 +293,116 @@
         b.classList.toggle('selected', b.dataset.avatar === cachedAvatar);
       });
 
-      socket.emit('user:register', {
-        userId: cachedId,
-        username: cachedName,
-        avatar: cachedAvatar
-      });
+      if (socket && socket.connected) {
+        socket.emit('user:register', {
+          userId: cachedId,
+          username: cachedName,
+          avatar: cachedAvatar
+        });
+      } else {
+        currentUser = {
+          id: cachedId || 'usr_local',
+          username: cachedName,
+          avatar: cachedAvatar,
+          wins: parseInt(localStorage.getItem('neo_tic_wins') || '0', 10),
+          losses: parseInt(localStorage.getItem('neo_tic_losses') || '0', 10),
+          draws: parseInt(localStorage.getItem('neo_tic_draws') || '0', 10),
+          rating: parseInt(localStorage.getItem('neo_tic_rating') || '1000', 10)
+        };
+        updateUserProfileUI();
+        showScreen('lobby');
+      }
     }
   }
 
   // Auto-register on socket connect / reconnect
-  socket.on('connect', () => {
-    console.log('[SOCKET] Connected to arena server:', socket.id);
-    sendRegistration();
-  });
+  if (socket) {
+    socket.on('connect', () => {
+      console.log('[SOCKET] Connected to arena server:', socket.id);
+      sendRegistration();
+    });
+  }
 
   window.addEventListener('DOMContentLoaded', () => {
     loadNetworkInfo();
     sendRegistration();
+
+    // Combat Mode Buttons
+    const btnPlayAi = document.getElementById('btn-play-ai');
+    if (btnPlayAi) {
+      btnPlayAi.addEventListener('click', () => {
+        window.soundEngine.playClick();
+        startAiCombat();
+      });
+    }
+
+    const btnPassPlay = document.getElementById('btn-pass-play');
+    if (btnPassPlay) {
+      btnPassPlay.addEventListener('click', () => {
+        window.soundEngine.playClick();
+        startPassAndPlay();
+      });
+    }
+
+    const btnQuickAiReg = document.getElementById('btn-quick-ai-reg');
+    if (btnQuickAiReg) {
+      btnQuickAiReg.addEventListener('click', () => {
+        window.soundEngine.playClick();
+        const inputName = document.getElementById('reg-username')?.value.trim();
+        if (inputName) {
+          localStorage.setItem('neo_tic_username', inputName);
+        }
+        startAiCombat();
+      });
+    }
+
+    const btnQuickPassReg = document.getElementById('btn-quick-pass-reg');
+    if (btnQuickPassReg) {
+      btnQuickPassReg.addEventListener('click', () => {
+        window.soundEngine.playClick();
+        const inputName = document.getElementById('reg-username')?.value.trim();
+        if (inputName) {
+          localStorage.setItem('neo_tic_username', inputName);
+        }
+        startPassAndPlay();
+      });
+    }
+
+    const btnP2pRoom = document.getElementById('btn-p2p-room');
+    if (btnP2pRoom) {
+      btnP2pRoom.addEventListener('click', () => {
+        window.soundEngine.playClick();
+        openP2pModal();
+      });
+    }
+
+    const btnCloseP2p = document.getElementById('btn-close-p2p');
+    if (btnCloseP2p) {
+      btnCloseP2p.addEventListener('click', () => {
+        hideModal('p2pRoom');
+      });
+    }
+
+    const btnConnectP2p = document.getElementById('btn-connect-p2p');
+    if (btnConnectP2p) {
+      btnConnectP2p.addEventListener('click', () => {
+        const codeInput = document.getElementById('p2p-input-code').value.trim();
+        if (codeInput) connectToP2pPeer(codeInput);
+      });
+    }
+
+    const btnCopyP2p = document.getElementById('btn-copy-p2p-link');
+    if (btnCopyP2p) {
+      btnCopyP2p.addEventListener('click', () => {
+        const code = document.getElementById('p2p-my-code-display').textContent;
+        const link = window.location.origin + window.location.pathname + '?room=' + code;
+        navigator.clipboard.writeText(link).then(() => {
+          showToast('📋 P2P room invite link copied to clipboard!');
+        }).catch(() => {
+          showToast(link);
+        });
+      });
+    }
 
     // Minimizable Stats Banner
     const statsBanner = document.getElementById('lobby-stats-banner');
@@ -345,7 +485,9 @@
       refreshBtn.addEventListener('click', () => {
         window.soundEngine.playClick();
         refreshBtn.textContent = '🔄 Scanning...';
-        socket.emit('lobby:refresh');
+        if (socket && socket.connected) {
+          socket.emit('lobby:refresh');
+        }
         setTimeout(() => {
           refreshBtn.textContent = '🔄 Re-scan';
         }, 800);
@@ -357,7 +499,11 @@
     if (quickMatchBtn) {
       quickMatchBtn.addEventListener('click', () => {
         window.soundEngine.playClick();
-        socket.emit('match:quick_match');
+        if (socket && socket.connected) {
+          socket.emit('match:quick_match');
+        } else {
+          startAiCombat();
+        }
       });
     }
   });
@@ -582,8 +728,9 @@
     }, 1600);
   });
 
-  function setupMatchArena(matchId, p1, p2, hostId) {
+  function setupMatchArena(matchId, p1, p2, hostId, extraOptions = {}) {
     currentMatch = {
+      ...(currentMatch || {}),
       matchId,
       p1,
       p2,
@@ -591,7 +738,8 @@
       currentRound: 1,
       scores: { [p1.id]: 0, [p2.id]: 0 },
       board: Array(9).fill(null),
-      currentTurn: p1.id
+      currentTurn: p1.id,
+      ...extraOptions
     };
 
     // Render Left Player 1 HUD
@@ -652,38 +800,175 @@
       myChosenSymbol = btn.dataset.symbol;
 
       if (currentMatch) {
-        socket.emit('match:choose_symbol', {
-          matchId: currentMatch.matchId,
-          chosenSymbol: myChosenSymbol
-        });
+        if (currentMatch.isLocal) {
+          currentMatch.p1.symbol = myChosenSymbol;
+          currentMatch.p2.symbol = myChosenSymbol === 'X' ? 'O' : 'X';
+          document.getElementById('hud-p1-symbol').textContent = currentMatch.p1.symbol;
+          document.getElementById('hud-p2-symbol').textContent = currentMatch.p2.symbol;
+          return;
+        }
+        if (currentMatch.isP2p) {
+          currentMatch.p1.symbol = myChosenSymbol;
+          currentMatch.p2.symbol = myChosenSymbol === 'X' ? 'O' : 'X';
+          document.getElementById('hud-p1-symbol').textContent = currentMatch.p1.symbol;
+          document.getElementById('hud-p2-symbol').textContent = currentMatch.p2.symbol;
+          if (p2pActiveConn && p2pActiveConn.open) {
+            p2pActiveConn.send({ type: 'symbol_chosen', p1Symbol: currentMatch.p1.symbol, p2Symbol: currentMatch.p2.symbol });
+          }
+          return;
+        }
+        if (socket && socket.connected) {
+          socket.emit('match:choose_symbol', {
+            matchId: currentMatch.matchId,
+            chosenSymbol: myChosenSymbol
+          });
+        }
       }
     });
   });
 
-  socket.on('match:symbols_assigned', ({ p1, p2, startingUserId }) => {
-    if (!currentMatch) return;
-    currentMatch.p1 = p1;
-    currentMatch.p2 = p2;
-    currentMatch.currentTurn = startingUserId;
+  if (socket) {
+    socket.on('match:symbols_assigned', ({ p1, p2, startingUserId }) => {
+      if (!currentMatch) return;
+      currentMatch.p1 = p1;
+      currentMatch.p2 = p2;
+      currentMatch.currentTurn = startingUserId;
 
-    document.getElementById('hud-p1-symbol').textContent = p1.symbol;
-    document.getElementById('hud-p2-symbol').textContent = p2.symbol;
-  });
+      document.getElementById('hud-p1-symbol').textContent = p1.symbol;
+      document.getElementById('hud-p2-symbol').textContent = p2.symbol;
+    });
+  }
 
   document.getElementById('btn-lock-symbol').addEventListener('click', () => {
     window.soundEngine.playClick();
     if (!currentMatch) return;
-    socket.emit('match:start_countdown', {
-      matchId: currentMatch.matchId
-    });
+    if (currentMatch.isLocal) {
+      startLocalCountdown(currentMatch.roundName || 'ROUND 1', () => {
+        startLocalRound(1);
+      });
+      return;
+    }
+    if (currentMatch.isP2p) {
+      if (p2pActiveConn && p2pActiveConn.open) {
+        p2pActiveConn.send({ type: 'start_countdown' });
+      }
+      startLocalCountdown(currentMatch.roundName || 'ROUND 1', () => {
+        startLocalRound(1);
+      });
+      return;
+    }
+    if (socket && socket.connected) {
+      socket.emit('match:start_countdown', {
+        matchId: currentMatch.matchId
+      });
+    }
   });
 
-  // 10. 5-Second Countdown
-  socket.on('match:countdown_start', ({ durationSeconds, roundName }) => {
+  // --- OFFLINE / STATIC MODES & TACTICAL AI ENGINE ---
+  const WIN_COMBOS = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
+  ];
+
+  function checkWinnerLocal(board) {
+    for (const combo of WIN_COMBOS) {
+      const [a, b, c] = combo;
+      if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+        return { winnerSymbol: board[a], combo };
+      }
+    }
+    if (board.every(cell => cell !== null)) {
+      return { isDraw: true };
+    }
+    return null;
+  }
+
+  function getBestAiMove(board, aiSymbol, playerSymbol) {
+    // 1. Check if AI can win immediately
+    for (const combo of WIN_COMBOS) {
+      const [a, b, c] = combo;
+      if (board[a] === aiSymbol && board[b] === aiSymbol && board[c] === null) return c;
+      if (board[a] === aiSymbol && board[c] === aiSymbol && board[b] === null) return b;
+      if (board[b] === aiSymbol && board[c] === aiSymbol && board[a] === null) return a;
+    }
+    // 2. Check if player has immediate win and block it
+    for (const combo of WIN_COMBOS) {
+      const [a, b, c] = combo;
+      if (board[a] === playerSymbol && board[b] === playerSymbol && board[c] === null) return c;
+      if (board[a] === playerSymbol && board[c] === playerSymbol && board[b] === null) return b;
+      if (board[b] === playerSymbol && board[c] === playerSymbol && board[a] === null) return a;
+    }
+    // 3. Take center cell if available
+    if (board[4] === null) return 4;
+    // 4. Take corners if available
+    const corners = [0, 2, 6, 8].filter(idx => board[idx] === null);
+    if (corners.length > 0) return corners[Math.floor(Math.random() * corners.length)];
+    // 5. Take any remaining empty cell
+    const empty = board.map((v, i) => v === null ? i : null).filter(v => v !== null);
+    return empty[Math.floor(Math.random() * empty.length)];
+  }
+
+  function ensureUser() {
+    if (!currentUser) {
+      currentUser = {
+        id: localStorage.getItem('neo_tic_user_id') || 'usr_' + Math.random().toString(36).substring(2, 8),
+        username: localStorage.getItem('neo_tic_username') || 'Warrior',
+        avatar: localStorage.getItem('neo_tic_avatar') || selectedAvatar,
+        wins: parseInt(localStorage.getItem('neo_tic_wins') || '0', 10),
+        losses: parseInt(localStorage.getItem('neo_tic_losses') || '0', 10),
+        draws: parseInt(localStorage.getItem('neo_tic_draws') || '0', 10),
+        rating: parseInt(localStorage.getItem('neo_tic_rating') || '1000', 10)
+      };
+      updateUserProfileUI();
+    }
+  }
+
+  function startAiCombat() {
+    ensureUser();
+    currentMatch = {
+      isLocal: true,
+      isAiMatch: true,
+      matchId: 'ai_' + Date.now(),
+      p1: { id: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, symbol: 'X' },
+      p2: { id: 'ai_bot', username: 'CYBER_CORE 🤖', avatar: 'mecha_core', symbol: 'O' },
+      scores: { [currentUser.id]: 0, 'ai_bot': 0 },
+      currentRound: 1,
+      roundName: 'ROUND 1',
+      clashesCount: 0,
+      board: Array(9).fill(null),
+      currentTurn: currentUser.id
+    };
+
+    setupMatchArena(currentMatch.matchId, currentMatch.p1, currentMatch.p2, currentUser.id);
+    showToast('🤖 Battle vs Tactical Cyber AI initiated. Lock in your symbol to strike!');
+  }
+
+  function startPassAndPlay() {
+    ensureUser();
+    currentMatch = {
+      isLocal: true,
+      isPassAndPlay: true,
+      matchId: 'passplay_' + Date.now(),
+      p1: { id: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, symbol: 'X' },
+      p2: { id: 'guest_p2', username: 'Player 2 (Guest)', avatar: 'apex_hunter', symbol: 'O' },
+      scores: { [currentUser.id]: 0, 'guest_p2': 0 },
+      currentRound: 1,
+      roundName: 'ROUND 1',
+      clashesCount: 0,
+      board: Array(9).fill(null),
+      currentTurn: currentUser.id
+    };
+
+    setupMatchArena(currentMatch.matchId, currentMatch.p1, currentMatch.p2, currentUser.id);
+    showToast('👥 Local Duel (Pass & Play) initiated. 2 players take turns on this device!');
+  }
+
+  function startLocalCountdown(roundName = 'ROUND 1', onComplete) {
     document.getElementById('countdown-round-name').textContent = `${roundName} COMMENCING`;
     showModal('countdown');
 
-    let count = durationSeconds || 5;
+    let count = 5;
     const numEl = document.getElementById('countdown-num');
     numEl.textContent = count;
     window.soundEngine.playCountdownTick(count);
@@ -697,45 +982,394 @@
         window.soundEngine.playGong();
         setTimeout(() => {
           hideModal('countdown');
+          if (onComplete) onComplete();
         }, 700);
       } else {
         numEl.textContent = count;
         window.soundEngine.playCountdownTick(count);
       }
     }, 1000);
-  });
+  }
 
-  // 11. Round Start
-  socket.on('game:round_start', ({ matchId, currentRound, roundName, board, scores, currentTurn, p1, p2, isClashReplay }) => {
+  function startLocalRound(roundNum = 1, isClash = false) {
     hideModal('clash');
     hideStrikeLine();
     clearBoardCells();
 
-    currentMatch.currentRound = currentRound;
-    currentMatch.roundName = roundName;
-    currentMatch.board = board;
-    currentMatch.scores = scores;
-    currentMatch.currentTurn = currentTurn;
-    currentMatch.p1 = p1;
-    currentMatch.p2 = p2;
+    currentMatch.currentRound = roundNum;
+    currentMatch.roundName = roundNum === 1 ? 'ROUND 1' : (roundNum === 2 ? 'ROUND 2' : 'FINAL ROUND');
+    currentMatch.board = Array(9).fill(null);
 
     // Switch Bottom Dock to Gameplay
     document.getElementById('dock-symbol-picker').classList.add('hidden');
     document.getElementById('dock-gameplay').classList.remove('hidden');
 
     // Update Round Headers
-    document.getElementById('arena-round-badge').textContent = roundName;
-    updateRoundTrackerDots(currentRound);
+    document.getElementById('arena-round-badge').textContent = currentMatch.roundName + (isClash ? ' (REPLAY)' : '');
+    updateRoundTrackerDots(roundNum);
 
     // Update HUD Scores
-    document.getElementById('hud-p1-score').textContent = scores[p1.id] || 0;
-    document.getElementById('hud-p2-score').textContent = scores[p2.id] || 0;
-    document.getElementById('header-p1-score').textContent = scores[p1.id] || 0;
-    document.getElementById('header-p2-score').textContent = scores[p2.id] || 0;
+    document.getElementById('hud-p1-score').textContent = currentMatch.scores[currentMatch.p1.id] || 0;
+    document.getElementById('hud-p2-score').textContent = currentMatch.scores[currentMatch.p2.id] || 0;
+    document.getElementById('header-p1-score').textContent = currentMatch.scores[currentMatch.p1.id] || 0;
+    document.getElementById('header-p2-score').textContent = currentMatch.scores[currentMatch.p2.id] || 0;
 
-    // Update Turn Indicators
-    updateTurnHUD(currentTurn);
-  });
+    // Starting turn: X strikes first
+    const startingTurn = currentMatch.p1.symbol === 'X' ? currentMatch.p1.id : currentMatch.p2.id;
+    currentMatch.currentTurn = startingTurn;
+    updateTurnHUD(startingTurn);
+
+    if (currentMatch.isAiMatch && startingTurn === 'ai_bot') {
+      setTimeout(makeAiMove, 600);
+    }
+  }
+
+  function applyLocalMoveVisual(index, symbol) {
+    currentMatch.board[index] = symbol;
+    const cell = document.getElementById(`cell-${index}`);
+    if (cell) {
+      cell.textContent = symbol;
+      cell.classList.add('claimed', symbol === 'X' ? 'cell-x' : 'cell-o');
+
+      const rect = cell.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const color = symbol === 'X' ? '#00f0ff' : '#ff0055';
+      if (window.fxCanvas) {
+        window.fxCanvas.emitBurst(cx, cy, color, 24);
+      }
+
+      if (symbol === 'X') {
+        window.soundEngine.playMoveX();
+      } else {
+        window.soundEngine.playMoveO();
+      }
+    }
+  }
+
+  function handleLocalCellClick(index) {
+    if (!currentMatch || currentMatch.board[index] !== null) return;
+
+    if (currentMatch.isAiMatch) {
+      if (currentMatch.currentTurn !== currentUser.id) return;
+      applyLocalMoveVisual(index, currentMatch.p1.symbol);
+
+      const res = checkWinnerLocal(currentMatch.board);
+      if (res) {
+        handleLocalRoundEnd(res);
+        return;
+      }
+
+      currentMatch.currentTurn = 'ai_bot';
+      updateTurnHUD('ai_bot');
+      setTimeout(makeAiMove, 550);
+    } else if (currentMatch.isPassAndPlay) {
+      const activeId = currentMatch.currentTurn;
+      const isP1 = activeId === currentMatch.p1.id;
+      const symbol = isP1 ? currentMatch.p1.symbol : currentMatch.p2.symbol;
+      applyLocalMoveVisual(index, symbol);
+
+      const res = checkWinnerLocal(currentMatch.board);
+      if (res) {
+        handleLocalRoundEnd(res);
+        return;
+      }
+
+      const nextTurn = isP1 ? currentMatch.p2.id : currentMatch.p1.id;
+      currentMatch.currentTurn = nextTurn;
+      updateTurnHUD(nextTurn);
+    }
+  }
+
+  function makeAiMove() {
+    if (!currentMatch || !currentMatch.isAiMatch) return;
+    const aiSymbol = currentMatch.p2.symbol;
+    const playerSymbol = currentMatch.p1.symbol;
+    const bestMove = getBestAiMove(currentMatch.board, aiSymbol, playerSymbol);
+
+    if (bestMove !== null && bestMove !== undefined) {
+      applyLocalMoveVisual(bestMove, aiSymbol);
+
+      const res = checkWinnerLocal(currentMatch.board);
+      if (res) {
+        handleLocalRoundEnd(res);
+        return;
+      }
+
+      currentMatch.currentTurn = currentUser.id;
+      updateTurnHUD(currentUser.id);
+    }
+  }
+
+  function handleLocalRoundEnd(res) {
+    if (res.winnerSymbol) {
+      const isP1 = currentMatch.p1.symbol === res.winnerSymbol;
+      const winner = isP1 ? currentMatch.p1 : currentMatch.p2;
+      currentMatch.scores[winner.id] = (currentMatch.scores[winner.id] || 0) + 1;
+
+      if (res.combo) {
+        res.combo.forEach(idx => {
+          const c = document.getElementById(`cell-${idx}`);
+          if (c) c.classList.add('winning-cell');
+        });
+        drawStrikeLine(res.combo);
+      }
+      window.soundEngine.playRoundWin();
+
+      const dot = document.getElementById(`dot-round-${currentMatch.currentRound}`);
+      if (dot) dot.classList.add(isP1 ? 'won-p1' : 'won-p2');
+
+      document.getElementById('hud-p1-score').textContent = currentMatch.scores[currentMatch.p1.id] || 0;
+      document.getElementById('hud-p2-score').textContent = currentMatch.scores[currentMatch.p2.id] || 0;
+      document.getElementById('header-p1-score').textContent = currentMatch.scores[currentMatch.p1.id] || 0;
+      document.getElementById('header-p2-score').textContent = currentMatch.scores[currentMatch.p2.id] || 0;
+
+      document.getElementById('dock-turn-message').textContent = `ROUND WON BY ${winner.username.toUpperCase()}!`;
+      document.getElementById('dock-turn-message').style.color = 'var(--neon-gold)';
+
+      const p1Score = currentMatch.scores[currentMatch.p1.id] || 0;
+      const p2Score = currentMatch.scores[currentMatch.p2.id] || 0;
+      const tournamentOver = p1Score >= 2 || p2Score >= 2 || (currentMatch.currentRound >= 3 && p1Score !== p2Score);
+
+      if (tournamentOver) {
+        const finalWinner = p1Score > p2Score ? currentMatch.p1 : currentMatch.p2;
+        if (finalWinner.id === currentUser.id) {
+          currentUser.wins = (currentUser.wins || 0) + 1;
+          localStorage.setItem('neo_tic_wins', currentUser.wins);
+        } else {
+          currentUser.losses = (currentUser.losses || 0) + 1;
+          localStorage.setItem('neo_tic_losses', currentUser.losses);
+        }
+        updateUserProfileUI();
+
+        setTimeout(() => {
+          document.getElementById('victory-winner-name').textContent = `${finalWinner.username.toUpperCase()} WINS!`;
+          document.getElementById('victory-p1-name').textContent = currentMatch.p1.username;
+          document.getElementById('victory-p2-name').textContent = currentMatch.p2.username;
+          document.getElementById('victory-p1-score').textContent = p1Score;
+          document.getElementById('victory-p2-score').textContent = p2Score;
+          document.getElementById('victory-rounds-count').textContent = currentMatch.currentRound;
+          document.getElementById('victory-clashes-count').textContent = currentMatch.clashesCount || 0;
+
+          if (finalWinner.id === currentUser.id) {
+            window.soundEngine.playMatchVictory();
+            if (window.fxCanvas) {
+              window.fxCanvas.celebrateVictory();
+            }
+          }
+          showModal('victory');
+        }, 1200);
+      } else {
+        setTimeout(() => {
+          startLocalRound(currentMatch.currentRound + 1);
+        }, 2200);
+      }
+    } else if (res.isDraw) {
+      currentMatch.clashesCount = (currentMatch.clashesCount || 0) + 1;
+      window.soundEngine.playClash();
+      showModal('clash');
+      document.getElementById('dock-turn-message').textContent = `⚡ CLASH DETECTED • REPLAYING ROUND ${currentMatch.currentRound} ⚡`;
+      setTimeout(() => {
+        startLocalRound(currentMatch.currentRound, true);
+      }, 2500);
+    }
+  }
+
+  // --- SERVERLESS P2P WEBRTC (PEERJS) ---
+  let peerInstance = null;
+  let p2pActiveConn = null;
+
+  function initP2pPeer() {
+    if (peerInstance || typeof Peer === 'undefined') return;
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const myPeerId = 'neo-' + randomSuffix;
+    try {
+      peerInstance = new Peer(myPeerId);
+      peerInstance.on('open', (id) => {
+        const display = document.getElementById('p2p-my-code-display');
+        if (display) display.textContent = id;
+      });
+      peerInstance.on('connection', (conn) => {
+        setupP2pConnection(conn, false);
+      });
+      peerInstance.on('error', (err) => {
+        console.warn('Peer error:', err);
+      });
+    } catch (e) {
+      console.warn('PeerJS init failed:', e);
+    }
+  }
+
+  function openP2pModal() {
+    ensureUser();
+    initP2pPeer();
+    showModal('p2pRoom');
+  }
+
+  function connectToP2pPeer(targetPeerId) {
+    if (!peerInstance) initP2pPeer();
+    if (!targetPeerId) return;
+    showToast(`Connecting to peer ${targetPeerId}...`);
+    const conn = peerInstance.connect(targetPeerId);
+    setupP2pConnection(conn, true);
+  }
+
+  function setupP2pConnection(conn, isInitiator) {
+    p2pActiveConn = conn;
+    conn.on('open', () => {
+      hideModal('p2pRoom');
+      showToast('⚡ P2P WebRTC Connection Established! Initializing Arena...');
+      ensureUser();
+
+      if (isInitiator) {
+        conn.send({ type: 'handshake', username: currentUser.username, avatar: currentUser.avatar });
+      }
+    });
+
+    conn.on('data', (data) => {
+      handleP2pMessage(data);
+    });
+
+    conn.on('close', () => {
+      showToast('P2P connection closed by remote peer.');
+      showScreen('lobby');
+    });
+  }
+
+  function handleP2pMessage(data) {
+    if (data.type === 'handshake') {
+      currentMatch = {
+        isP2p: true,
+        isHost: true,
+        matchId: 'p2p_' + Date.now(),
+        p1: { id: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, symbol: 'X' },
+        p2: { id: 'peer_opponent', username: data.username, avatar: data.avatar, symbol: 'O' },
+        scores: { [currentUser.id]: 0, 'peer_opponent': 0 },
+        currentRound: 1,
+        board: Array(9).fill(null),
+        currentTurn: currentUser.id
+      };
+      p2pActiveConn.send({ type: 'handshake_ack', username: currentUser.username, avatar: currentUser.avatar });
+      setupMatchArena(currentMatch.matchId, currentMatch.p1, currentMatch.p2, currentUser.id);
+    } else if (data.type === 'handshake_ack') {
+      currentMatch = {
+        isP2p: true,
+        isHost: false,
+        matchId: 'p2p_' + Date.now(),
+        p1: { id: 'peer_host', username: data.username, avatar: data.avatar, symbol: 'X' },
+        p2: { id: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, symbol: 'O' },
+        scores: { 'peer_host': 0, [currentUser.id]: 0 },
+        currentRound: 1,
+        board: Array(9).fill(null),
+        currentTurn: 'peer_host'
+      };
+      setupMatchArena(currentMatch.matchId, currentMatch.p1, currentMatch.p2, 'peer_host');
+    } else if (data.type === 'symbol_chosen') {
+      currentMatch.p1.symbol = data.p1Symbol;
+      currentMatch.p2.symbol = data.p2Symbol;
+      document.getElementById('hud-p1-symbol').textContent = data.p1Symbol;
+      document.getElementById('hud-p2-symbol').textContent = data.p2Symbol;
+    } else if (data.type === 'start_countdown') {
+      startLocalCountdown(currentMatch.roundName || 'ROUND 1', () => {
+        startLocalRound(1);
+      });
+    } else if (data.type === 'move') {
+      applyLocalMoveVisual(data.index, data.symbol);
+      const res = checkWinnerLocal(currentMatch.board);
+      if (res) {
+        handleLocalRoundEnd(res);
+      } else {
+        currentMatch.currentTurn = currentUser.id;
+        updateTurnHUD(currentUser.id);
+      }
+    } else if (data.type === 'rematch_request') {
+      const btn = document.getElementById('btn-request-rematch');
+      if (btn) {
+        btn.textContent = '⚔️ OPPONENT WANTS REMATCH! (CLICK TO ACCEPT)';
+        btn.classList.add('neon-green');
+      }
+    }
+  }
+
+  function handleP2pCellClick(index) {
+    if (currentMatch.currentTurn !== currentUser.id || currentMatch.board[index] !== null) return;
+    const mySymbol = currentUser.id === currentMatch.p1.id ? currentMatch.p1.symbol : currentMatch.p2.symbol;
+    applyLocalMoveVisual(index, mySymbol);
+
+    if (p2pActiveConn && p2pActiveConn.open) {
+      p2pActiveConn.send({ type: 'move', index, symbol: mySymbol });
+    }
+
+    const res = checkWinnerLocal(currentMatch.board);
+    if (res) {
+      handleLocalRoundEnd(res);
+    } else {
+      const oppId = currentUser.id === currentMatch.p1.id ? currentMatch.p2.id : currentMatch.p1.id;
+      currentMatch.currentTurn = oppId;
+      updateTurnHUD(oppId);
+    }
+  }
+
+  // 10. 5-Second Countdown
+  if (socket) {
+    socket.on('match:countdown_start', ({ durationSeconds, roundName }) => {
+      document.getElementById('countdown-round-name').textContent = `${roundName} COMMENCING`;
+      showModal('countdown');
+
+      let count = durationSeconds || 5;
+      const numEl = document.getElementById('countdown-num');
+      numEl.textContent = count;
+      window.soundEngine.playCountdownTick(count);
+
+      clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        count--;
+        if (count <= 0) {
+          clearInterval(countdownInterval);
+          numEl.textContent = 'ENGAGE!';
+          window.soundEngine.playGong();
+          setTimeout(() => {
+            hideModal('countdown');
+          }, 700);
+        } else {
+          numEl.textContent = count;
+          window.soundEngine.playCountdownTick(count);
+        }
+      }, 1000);
+    });
+
+    // 11. Round Start
+    socket.on('game:round_start', ({ matchId, currentRound, roundName, board, scores, currentTurn, p1, p2, isClashReplay }) => {
+      hideModal('clash');
+      hideStrikeLine();
+      clearBoardCells();
+
+      currentMatch.currentRound = currentRound;
+      currentMatch.roundName = roundName;
+      currentMatch.board = board;
+      currentMatch.scores = scores;
+      currentMatch.currentTurn = currentTurn;
+      currentMatch.p1 = p1;
+      currentMatch.p2 = p2;
+
+      // Switch Bottom Dock to Gameplay
+      document.getElementById('dock-symbol-picker').classList.add('hidden');
+      document.getElementById('dock-gameplay').classList.remove('hidden');
+
+      // Update Round Headers
+      document.getElementById('arena-round-badge').textContent = roundName;
+      updateRoundTrackerDots(currentRound);
+
+      // Update HUD Scores
+      document.getElementById('hud-p1-score').textContent = scores[p1.id] || 0;
+      document.getElementById('hud-p2-score').textContent = scores[p2.id] || 0;
+      document.getElementById('header-p1-score').textContent = scores[p1.id] || 0;
+      document.getElementById('header-p2-score').textContent = scores[p2.id] || 0;
+
+      // Update Turn Indicators
+      updateTurnHUD(currentTurn);
+    });
+  }
 
   function updateTurnHUD(currentTurn) {
     if (!currentMatch || !currentUser) return;
@@ -766,7 +1400,7 @@
       headline.style.color = 'var(--neon-green)';
       sub.textContent = 'Click an available grid slot to strike.';
     } else {
-      headline.textContent = '⏳ OPPONENT ENGAGING...';
+      headline.textContent = currentMatch.isAiMatch ? '🤖 CYBER AI CALCULATING...' : '⏳ OPPONENT ENGAGING...';
       headline.style.color = '#94a3b8';
       sub.textContent = 'Analyzing incoming tactical maneuvers.';
     }
@@ -777,15 +1411,28 @@
   gridCells.forEach(cell => {
     cell.addEventListener('click', (e) => {
       if (!currentMatch || !currentUser) return;
-      if (currentMatch.currentTurn !== currentUser.id) return;
 
       const index = parseInt(cell.dataset.index, 10);
       if (cell.classList.contains('claimed')) return;
 
-      socket.emit('game:make_move', {
-        matchId: currentMatch.matchId,
-        index
-      });
+      if (currentMatch.isLocal) {
+        handleLocalCellClick(index);
+        return;
+      }
+
+      if (currentMatch.isP2p) {
+        handleP2pCellClick(index);
+        return;
+      }
+
+      if (currentMatch.currentTurn !== currentUser.id) return;
+
+      if (socket && socket.connected) {
+        socket.emit('game:make_move', {
+          matchId: currentMatch.matchId,
+          index
+        });
+      }
     });
   });
 
@@ -901,6 +1548,13 @@
     if (currentUser.id === p2.id) currentUser = p2;
     updateUserProfileUI();
     loadLeaderboardAndHistory();
+
+    // Reset rematch button state
+    const rematchBtn = document.getElementById('btn-request-rematch');
+    if (rematchBtn) {
+      rematchBtn.textContent = '⚔️ REQUEST REMATCH';
+      rematchBtn.classList.remove('neon-green');
+    }
 
     showModal('victory');
   });

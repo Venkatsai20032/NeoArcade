@@ -4,7 +4,7 @@
 class SoundEngine {
   constructor() {
     this.ctx = null;
-    this.muted = false;
+    this.muted = true;
   }
 
   init() {

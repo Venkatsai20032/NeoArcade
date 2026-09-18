@@ -146,15 +146,28 @@ function unlockAchievement(userId, badgeId) {
 }
 
 function recordMatch({ matchId, p1, p2, p1Score, p2Score, winnerId, clashesCount, roundsPlayed }) {
+  const effectiveMatchId = matchId || ('arena_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
   const isP1Winner = winnerId === p1.id;
   const isP2Winner = winnerId === p2.id;
   const winnerName = isP1Winner ? p1.username : (isP2Winner ? p2.username : 'Draw');
 
+  // Idempotency guard: prevent duplicate recording of the same match
+  const existing = db.prepare('SELECT id FROM matches WHERE id = ?').get(effectiveMatchId);
+  if (existing) {
+    console.warn(`[DB] Match ${effectiveMatchId} already recorded. Skipping duplicate record.`);
+    return {
+      match: db.prepare('SELECT * FROM matches WHERE id = ?').get(effectiveMatchId),
+      p1: getUser(p1.id),
+      p2: getUser(p2.id),
+      newAchievements: { p1: [], p2: [] }
+    };
+  }
+
   // Insert match record
   db.prepare(`
-    INSERT INTO matches (id, player1_id, player2_id, player1_name, player2_name, winner_id, winner_name, p1_score, p2_score, rounds_played, clashes_count)
+    INSERT OR IGNORE INTO matches (id, player1_id, player2_id, player1_name, player2_name, winner_id, winner_name, p1_score, p2_score, rounds_played, clashes_count)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(matchId, p1.id, p2.id, p1.username, p2.username, winnerId || null, winnerName, p1Score, p2Score, roundsPlayed, clashesCount || 0);
+  `).run(effectiveMatchId, p1.id, p2.id, p1.username, p2.username, winnerId || null, winnerName, p1Score, p2Score, roundsPlayed, clashesCount || 0);
 
   // Update Player 1 stats
   const p1RatingDelta = isP1Winner ? 25 : (isP2Winner ? -15 : 5);
@@ -225,7 +238,7 @@ function recordMatch({ matchId, p1, p2, p1Score, p2Score, winnerId, clashesCount
   }
 
   return {
-    match: db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId),
+    match: db.prepare('SELECT * FROM matches WHERE id = ?').get(effectiveMatchId),
     p1: updatedP1,
     p2: updatedP2,
     newAchievements
