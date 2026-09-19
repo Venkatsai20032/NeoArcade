@@ -2,35 +2,568 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="0; url=public/">
-  <title>NEO-TIC ARENA</title>
-  <script>
-    window.location.replace("public/");
-  </script>
-  <style>
-    body {
-      background: #060810;
-      color: #00f0ff;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-      text-align: center;
-    }
-    a {
-      color: #00ff88;
-      text-decoration: none;
-      font-weight: bold;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>NEO-TIC: Tactical Multiplayer Arena</title>
+  <meta name="description" content="Cinematic real-time multiplayer Tic-Tac-Toe arena playable across same Wi-Fi network with 3-round tournament rules, clash replay, and SQLite persistence.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- Socket.io with Static CDN Fallback for GitHub Pages -->
+  <script src="/socket.io/socket.io.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.8.1/socket.io.min.js';"></script>
+  <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
-  <div>
-    <h2>⚔️ Entering NEO-TIC ARENA...</h2>
-    <p><a href="public/">Click here if you are not automatically redirected</a></p>
+  <!-- Ambient Particle Canvas -->
+  <canvas id="fx-canvas"></canvas>
+
+  <div class="app-container">
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-glitch-icon">⚔️</div>
+        <div>
+          <h1 class="brand-title">NEO-TIC <span class="brand-sub">ARENA</span></h1>
+          <p class="brand-tagline">Real-Time Tactical Combat</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <button id="wifi-info-btn" class="cyber-btn sm neon-blue" title="Show Wi-Fi LAN Connection Info">
+          <span class="pulse-dot"></span>
+          <span class="btn-text">📶 Wi-Fi Connect</span>
+        </button>
+        <button id="sound-toggle-btn" class="cyber-btn icon-btn sm" title="Sound Muted by Default (Click to toggle)">
+          🔇
+        </button>
+        <div id="user-header-pill" class="user-pill hidden">
+          <span class="user-pill-avatar" id="header-avatar">🥷</span>
+          <span class="user-pill-name" id="header-username">Warrior</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN VIEW CONTAINER -->
+    <main class="main-stage">
+      
+      <!-- SCREEN 1: REGISTRATION -->
+      <section id="screen-register" class="view-screen active">
+        <div class="cyber-panel register-panel">
+          <div class="panel-header">
+            <div class="cyber-badge">SYSTEM ACCESS</div>
+            <h2>WARRIOR REGISTRATION</h2>
+            <p>Connect and challenge players on your Wi-Fi network</p>
+          </div>
+
+          <form id="register-form" class="register-form" onsubmit="return false;">
+            <div class="form-group">
+              <label for="reg-username">OPERATOR CALLSIGN</label>
+              <div class="input-glow-wrapper">
+                <input type="text" id="reg-username" maxlength="15" placeholder="Enter CallSign (e.g. CyberViper)" required autocomplete="off" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>SELECT COMBAT AVATAR</label>
+              <div class="avatar-grid" id="avatar-selector">
+                <button type="button" class="avatar-option selected" data-avatar="cyber_ninja" data-emoji="🥷">
+                  <span class="avatar-emoji">🥷</span>
+                  <span class="avatar-label">Ninja</span>
+                </button>
+                <button type="button" class="avatar-option" data-avatar="mecha_core" data-emoji="🤖">
+                  <span class="avatar-emoji">🤖</span>
+                  <span class="avatar-label">Mecha</span>
+                </button>
+                <button type="button" class="avatar-option" data-avatar="neon_valkyrie" data-emoji="⚡">
+                  <span class="avatar-emoji">⚡</span>
+                  <span class="avatar-label">Valkyrie</span>
+                </button>
+                <button type="button" class="avatar-option" data-avatar="glitch_wraith" data-emoji="👾">
+                  <span class="avatar-emoji">👾</span>
+                  <span class="avatar-label">Wraith</span>
+                </button>
+                <button type="button" class="avatar-option" data-avatar="apex_hunter" data-emoji="🐯">
+                  <span class="avatar-emoji">🐯</span>
+                  <span class="avatar-label">Hunter</span>
+                </button>
+                <button type="button" class="avatar-option" data-avatar="quantum_phoenix" data-emoji="🦅">
+                  <span class="avatar-emoji">🦅</span>
+                  <span class="avatar-label">Phoenix</span>
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-enter-arena" class="cyber-btn lg neon-primary w-full">
+              ENTER COMBAT ARENA ➔
+            </button>
+
+            <div class="register-quick-actions" style="display: flex; gap: 8px; margin-top: 12px;">
+              <button type="button" id="btn-quick-ai-reg" class="cyber-btn sm neon-green flex-1" style="font-size: 11px; padding: 8px 6px;" title="Instantly battle tactical AI bot">
+                🤖 Quick VS Cyber AI
+              </button>
+              <button type="button" id="btn-quick-pass-reg" class="cyber-btn sm neon-cyan flex-1" style="font-size: 11px; padding: 8px 6px;" title="Pass & play on this device">
+                👥 Pass & Play Duel
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: LOBBY -->
+      <section id="screen-lobby" class="view-screen">
+        <!-- Player Quick Stats Bar (Minimizable & Scalable) -->
+        <div class="lobby-stats-banner cyber-panel" id="lobby-stats-banner">
+          <div class="banner-top-row">
+            <div class="profile-meta">
+              <div class="profile-avatar-large" id="lobby-profile-avatar">🥷</div>
+              <div>
+                <div class="profile-callsign" id="lobby-profile-name">CyberViper</div>
+                <div class="profile-rating-badge">RATING: <span id="lobby-profile-rating">1000</span></div>
+              </div>
+            </div>
+            <div class="banner-min-actions">
+              <span class="mini-stats-chip hidden" id="mini-stats-chip">0W - 0L • 0%</span>
+              <button id="btn-minimize-stats" class="cyber-btn sm icon-btn" title="Minimize / Expand Stats Banner">
+                <span id="minimize-stats-icon">▲</span>
+              </button>
+            </div>
+          </div>
+          <div class="stat-boxes" id="lobby-stat-boxes">
+            <div class="stat-box">
+              <div class="stat-val text-green" id="lobby-stat-wins">0</div>
+              <div class="stat-lbl">VICTORIES</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val text-red" id="lobby-stat-losses">0</div>
+              <div class="stat-lbl">DEFEATS</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val text-cyan" id="lobby-stat-draws">0</div>
+              <div class="stat-lbl">DRAWS</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val text-gold" id="lobby-stat-rate">0%</div>
+              <div class="stat-lbl">WIN RATE</div>
+            </div>
+        </div>
+
+        <!-- Combat Modes Quick Bar (Online LAN, Offline AI, Local Duel, and P2P) -->
+        <div class="combat-modes-bar cyber-panel">
+          <div class="modes-label">⚡ SELECT COMBAT PROTOCOL:</div>
+          <div class="modes-group">
+            <button id="btn-play-ai" class="cyber-btn sm neon-primary" title="Play against Tactical AI Bot (Works on GitHub Pages & Offline)">
+              🤖 Battle Cyber AI
+            </button>
+            <button id="btn-pass-play" class="cyber-btn sm neon-cyan" title="2 Players Duel on Same Screen">
+              👥 Pass & Play (Local)
+            </button>
+            <button id="btn-p2p-room" class="cyber-btn sm neon-magenta" title="Serverless P2P WebRTC Over Internet (Works on GitHub Pages)">
+              🌐 P2P Online Room
+            </button>
+          </div>
+        </div>
+
+        <!-- Lobby Content Grid -->
+        <div class="lobby-grid">
+          <!-- Left: Online Players List -->
+          <div class="cyber-panel players-panel">
+            <div class="panel-header-row">
+              <div class="flex-row">
+                <span class="pulse-indicator"></span>
+                <h3>ACTIVE WARRIORS ON WI-FI</h3>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button id="btn-refresh-lobby" class="cyber-btn sm" title="Re-scan Wi-Fi for opponents">🔄 Re-scan</button>
+                <span class="player-count-badge" id="online-count">1 ONLINE</span>
+              </div>
+            </div>
+
+            <!-- Quick Match / Instant Connect Banner -->
+            <div id="quick-match-banner" class="quick-match-banner hidden">
+              <div class="quick-match-info">
+                <span class="pulse-dot"></span>
+                <span id="quick-match-text">Opponent detected on Wi-Fi!</span>
+              </div>
+              <button id="btn-quick-match" class="cyber-btn sm neon-green animate-pulse">
+                ⚔️ QUICK CONNECT & PLAY
+              </button>
+            </div>
+
+            <div class="players-list-container" id="players-list">
+              <div class="empty-state">Scanning Wi-Fi network for opponents...</div>
+            </div>
+          </div>
+
+          <!-- Right: LAN Info & Leaderboard Tabs (Collapsible / Scalable) -->
+          <div class="cyber-panel side-panel" id="lobby-side-panel">
+            <div class="tabs-header">
+              <button class="tab-btn active" data-tab="tab-wifi">📶 Wi-Fi</button>
+              <button class="tab-btn" data-tab="tab-leaders">🏆 Rank</button>
+              <button class="tab-btn" data-tab="tab-history">📜 Recent</button>
+              <button id="btn-minimize-side" class="tab-btn icon-tab-btn" title="Toggle Side Panel">
+                <span id="minimize-side-icon">⛶</span>
+              </button>
+            </div>
+
+            <!-- Tab 1: Wi-Fi Share -->
+            <div class="tab-content active" id="tab-wifi">
+              <div class="wifi-share-box">
+                <p class="wifi-desc">Scan with mobile phone on the same Wi-Fi or share LAN URL:</p>
+                <div class="qr-container">
+                  <img id="wifi-qr-img" src="" alt="Wi-Fi QR Code" class="qr-image" />
+                </div>
+                <div class="lan-url-box">
+                  <input type="text" id="wifi-lan-url" readonly value="Detecting..." />
+                  <button id="btn-copy-wifi" class="cyber-btn sm neon-blue">Copy</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 2: Leaderboard -->
+            <div class="tab-content" id="tab-leaders">
+              <div class="leaderboard-list" id="leaderboard-container">
+                <div class="empty-state">Loading hall of fame...</div>
+              </div>
+            </div>
+
+            <!-- Tab 3: Match History -->
+            <div class="tab-content" id="tab-history">
+              <div class="history-list" id="history-container">
+                <div class="empty-state">No recorded battles yet.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: COMBAT ARENA (Middle Board, Left Player 1, Right Player 2, Bottom X/O Chooser) -->
+      <section id="screen-arena" class="view-screen">
+        <!-- Arena Tournament Header -->
+        <div class="arena-header cyber-panel">
+          <div class="round-indicator-box">
+            <span class="round-badge" id="arena-round-badge">ROUND 1</span>
+            <div class="round-tracker">
+              <span class="round-dot" id="dot-round-1" title="Round 1">1</span>
+              <span class="round-dot" id="dot-round-2" title="Round 2">2</span>
+              <span class="round-dot" id="dot-round-3" title="Final Round">F</span>
+            </div>
+          </div>
+
+          <div class="match-score-summary">
+            <span class="score-num p1-color" id="header-p1-score">0</span>
+            <span class="score-divider">:</span>
+            <span class="score-num p2-color" id="header-p2-score">0</span>
+          </div>
+
+          <div class="arena-header-controls">
+            <div class="arena-status-pill" id="arena-match-status">
+              WAR IN PROGRESS
+            </div>
+            <button id="btn-arena-fullscreen" class="cyber-btn sm icon-btn" title="Toggle Fullscreen / Scaled Arena">
+              ⛶
+            </button>
+          </div>
+        </div>
+
+        <!-- 3-Column Arena Stage -->
+        <div class="arena-stage-layout">
+          <!-- LEFT COLUMN: PLAYER 1 HUD -->
+          <aside class="player-hud-card p1-card" id="hud-p1">
+            <div class="hud-turn-glow"></div>
+            <div class="hud-top">
+              <div class="hud-avatar-box">
+                <div class="hud-avatar" id="hud-p1-avatar">🥷</div>
+                <div class="hud-symbol-badge symbol-x" id="hud-p1-symbol">X</div>
+              </div>
+              <div class="hud-info">
+                <h3 class="hud-name" id="hud-p1-name">Player 1</h3>
+                <span class="hud-role" id="hud-p1-role">HOST</span>
+              </div>
+            </div>
+
+            <div class="hud-score-display">
+              <div class="hud-score-val p1-color" id="hud-p1-score">0</div>
+              <div class="hud-score-label">ROUNDS WON</div>
+            </div>
+
+            <div class="hud-turn-badge" id="hud-p1-turn-indicator">
+              WAITING
+            </div>
+          </aside>
+
+          <!-- CENTER COLUMN: 3X3 HOLOGRAPHIC BOARD -->
+          <div class="arena-center-board">
+            <div class="board-frame-container">
+              <div class="board-corner top-left"></div>
+              <div class="board-corner top-right"></div>
+              <div class="board-corner bottom-left"></div>
+              <div class="board-corner bottom-right"></div>
+
+              <!-- 3x3 Grid -->
+              <div class="tic-grid" id="tic-grid">
+                <button class="grid-cell" data-index="0" id="cell-0"></button>
+                <button class="grid-cell" data-index="1" id="cell-1"></button>
+                <button class="grid-cell" data-index="2" id="cell-2"></button>
+                <button class="grid-cell" data-index="3" id="cell-3"></button>
+                <button class="grid-cell" data-index="4" id="cell-4"></button>
+                <button class="grid-cell" data-index="5" id="cell-5"></button>
+                <button class="grid-cell" data-index="6" id="cell-6"></button>
+                <button class="grid-cell" data-index="7" id="cell-7"></button>
+                <button class="grid-cell" data-index="8" id="cell-8"></button>
+              </div>
+
+              <!-- Winning Strike Line SVG Overlay -->
+              <svg class="strike-line-svg" id="strike-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <line id="strike-line" x1="0" y1="0" x2="0" y2="0" class="strike-line" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: PLAYER 2 HUD -->
+          <aside class="player-hud-card p2-card" id="hud-p2">
+            <div class="hud-turn-glow"></div>
+            <div class="hud-top">
+              <div class="hud-avatar-box">
+                <div class="hud-avatar" id="hud-p2-avatar">🤖</div>
+                <div class="hud-symbol-badge symbol-o" id="hud-p2-symbol">O</div>
+              </div>
+              <div class="hud-info">
+                <h3 class="hud-name" id="hud-p2-name">Player 2</h3>
+                <span class="hud-role" id="hud-p2-role">CHALLENGER</span>
+              </div>
+            </div>
+
+            <div class="hud-score-display">
+              <div class="hud-score-val p2-color" id="hud-p2-score">0</div>
+              <div class="hud-score-label">ROUNDS WON</div>
+            </div>
+
+            <div class="hud-turn-badge" id="hud-p2-turn-indicator">
+              WAITING
+            </div>
+          </aside>
+        </div>
+
+        <!-- BOTTOM: CHOOSER X/O & COMBAT DOCK -->
+        <footer class="arena-bottom-dock cyber-panel">
+          <!-- Phase 1: Symbol Chooser (Before Round 1 Starts) -->
+          <div id="dock-symbol-picker" class="symbol-picker-dock">
+            <div class="picker-instruction" id="picker-instruction-text">
+              CHOOSE COMBAT SYMBOL:
+            </div>
+            <div class="symbol-btn-group" id="host-symbol-buttons">
+              <button class="cyber-btn symbol-btn neon-cyan active" data-symbol="X">
+                <span class="symbol-char">X</span>
+                <span class="symbol-sub">STRIKES FIRST</span>
+              </button>
+              <button class="cyber-btn symbol-btn neon-magenta" data-symbol="O">
+                <span class="symbol-char">O</span>
+                <span class="symbol-sub">TACTICAL SECOND</span>
+              </button>
+            </div>
+            <button id="btn-lock-symbol" class="cyber-btn neon-primary">
+              LOCK IN SYMBOLS & START ➔
+            </button>
+          </div>
+
+          <!-- Phase 2: In-Game Turn Status & Actions -->
+          <div id="dock-gameplay" class="gameplay-dock hidden">
+            <div class="dock-turn-banner">
+              <div class="turn-symbol-preview" id="dock-my-symbol">X</div>
+              <div>
+                <div class="dock-turn-headline" id="dock-turn-message">YOUR TURN - ENGAGE TARGET</div>
+                <div class="dock-turn-sub" id="dock-turn-sub">Click an open grid slot to mark your position</div>
+              </div>
+            </div>
+
+            <div class="dock-actions">
+              <button id="btn-surrender" class="cyber-btn sm danger-btn">Surrender</button>
+              <button id="btn-leave-arena" class="cyber-btn sm">Leave Arena</button>
+            </div>
+          </div>
+        </footer>
+      </section>
+    </main>
+
+    <!-- CINEMATIC MODAL 1: 30-SECOND CHALLENGE INVITATION -->
+    <div id="modal-incoming-challenge" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel challenge-modal-panel">
+        <div class="alarm-pulse">⚠️ ARENA COMBAT INVITATION</div>
+        <div class="challenger-showcase">
+          <div class="challenger-avatar" id="invite-challenger-avatar">🥷</div>
+          <h2 class="challenger-name" id="invite-challenger-name">CyberViper</h2>
+          <p class="challenger-sub">Has challenged you to a 3-Round Tournament!</p>
+        </div>
+
+        <!-- 30-Second Countdown Dial -->
+        <div class="timer-dial-box">
+          <svg class="countdown-svg" viewBox="0 0 100 100">
+            <circle class="timer-track" cx="50" cy="50" r="42" />
+            <circle class="timer-fill" id="invite-timer-ring" cx="50" cy="50" r="42" />
+          </svg>
+          <div class="timer-display-num" id="invite-timer-text">30s</div>
+        </div>
+
+        <div class="challenge-actions">
+          <button id="btn-accept-challenge" class="cyber-btn lg neon-green flex-1">
+            ⚔️ ACCEPT BATTLE
+          </button>
+          <button id="btn-decline-challenge" class="cyber-btn lg danger-btn flex-1">
+            DECLINE
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CINEMATIC MODAL 2: TRANSMITTING CHALLENGE (WAITING FOR OPPONENT) -->
+    <div id="modal-waiting-challenge" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel waiting-modal-panel">
+        <div class="radar-scan-anim">
+          <div class="radar-circle"></div>
+          <div class="radar-sweep"></div>
+        </div>
+        <h2>TRANSMITTING ARENA CHALLENGE</h2>
+        <p>Waiting for <span class="highlight" id="waiting-target-name">Opponent</span> to accept...</p>
+        <div class="waiting-timer" id="waiting-timer-text">Expires in 30s</div>
+        <button id="btn-cancel-challenge" class="cyber-btn sm danger-btn mt-4">Cancel Challenge</button>
+      </div>
+    </div>
+
+    <!-- CINEMATIC MODAL 3: CONNECTION ESTABLISHED SUCCESS ALERT -->
+    <div id="modal-connection-success" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel success-modal-panel">
+        <div class="success-icon-burst">⚡</div>
+        <h2 class="neon-glow-text">CONNECTION ESTABLISHED!</h2>
+        <p class="success-sub">Real-Time Arena Synchronized. Preparing Combat...</p>
+      </div>
+    </div>
+
+    <!-- CINEMATIC OVERLAY 4: 5-SECOND GAME COUNTDOWN -->
+    <div id="overlay-countdown" class="cinematic-modal-overlay hidden">
+      <div class="countdown-content">
+        <div class="countdown-sub-title" id="countdown-round-name">ROUND 1 COMMENCING</div>
+        <div class="countdown-big-number" id="countdown-num">5</div>
+        <div class="countdown-tagline">PREPARE FOR ENGAGEMENT</div>
+      </div>
+    </div>
+
+    <!-- CINEMATIC OVERLAY 5: CLASH / DRAW REPLAY BANNER -->
+    <div id="overlay-clash" class="cinematic-modal-overlay hidden">
+      <div class="clash-card">
+        <div class="clash-thunder">⚡ ⚡ ⚡</div>
+        <h1 class="clash-title">CLASH DETECTED!</h1>
+        <p class="clash-desc">NO GROUND YIELDED. REPLAYING THIS ROUND!</p>
+        <div class="clash-indicator">BOARD RE-INITIALIZING...</div>
+      </div>
+    </div>
+
+    <!-- CINEMATIC MODAL 6: TOURNAMENT VICTORY & CONGRATULATIONS CEREMONY -->
+    <div id="modal-victory" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel victory-modal-panel">
+        <div class="trophy-glow">🏆</div>
+        <div class="victory-header-tag">TOURNAMENT CONCLUDED</div>
+        <h1 class="winner-headline" id="victory-winner-name">CHAMPION VICTORY</h1>
+        <p class="congrats-text" id="victory-congrats-sub">Superior Tactical Strategy Demonstrated!</p>
+
+        <div class="final-score-card">
+          <div class="final-score-item">
+            <span class="player-label" id="victory-p1-name">P1</span>
+            <span class="final-score-big p1-color" id="victory-p1-score">2</span>
+          </div>
+          <div class="final-score-divider">-</div>
+          <div class="final-score-item">
+            <span class="player-label" id="victory-p2-name">P2</span>
+            <span class="final-score-big p2-color" id="victory-p2-score">1</span>
+          </div>
+        </div>
+
+        <div class="victory-stats-row">
+          <div>ROUNDS FOUGHT: <span id="victory-rounds-count">3</span></div>
+          <div>CLASHES SURVIVED: <span id="victory-clashes-count">0</span></div>
+        </div>
+
+        <!-- Newly Unlocked Badges -->
+        <div id="victory-achievements-box" class="unlocked-badges-container hidden">
+          <div class="achievements-title">🏅 NEW ACHIEVEMENTS UNLOCKED</div>
+          <div class="badge-chips" id="victory-badges-list"></div>
+        </div>
+
+        <div class="victory-actions">
+          <button id="btn-request-rematch" class="cyber-btn lg neon-primary flex-1">
+            🔄 REQUEST REMATCH
+          </button>
+          <button id="btn-return-lobby" class="cyber-btn lg neon-blue flex-1">
+            🚪 RETURN TO LOBBY
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- WI-FI QUICK CONNECT MODAL -->
+    <!-- WI-FI QUICK CONNECT MODAL -->
+    <div id="modal-wifi-info" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel wifi-modal-panel">
+        <div class="panel-header-row">
+          <h3>📶 SAME WI-FI MULTIPLAYER</h3>
+          <button id="btn-close-wifi" class="close-x-btn">✕</button>
+        </div>
+        <p class="modal-intro">Any player connected to the same Wi-Fi network can join this arena immediately:</p>
+        
+        <div class="qr-big-box">
+          <img id="modal-wifi-qr-img" src="" alt="Wi-Fi QR Code" class="qr-image-big" />
+        </div>
+
+        <div class="modal-url-row">
+          <input type="text" id="modal-wifi-url" readonly />
+          <button id="btn-modal-copy-wifi" class="cyber-btn neon-blue sm">Copy Link</button>
+        </div>
+
+        <div class="wifi-tips">
+          <p>💡 <strong>Mobile Play:</strong> Open your smartphone camera, scan the QR code above, and join directly in your mobile browser without installing any app!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- P2P WEBRTC ONLINE ROOM MODAL (For Static GitHub Pages Play) -->
+    <div id="modal-p2p-room" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel wifi-modal-panel">
+        <div class="panel-header-row">
+          <h3>🌐 P2P ONLINE ROOM (SERVERLESS)</h3>
+          <button id="btn-close-p2p" class="close-x-btn">✕</button>
+        </div>
+        <p class="modal-intro">Connect directly with a friend anywhere in the world over WebRTC (No backend server required):</p>
+        
+        <div style="display:flex;flex-direction:column;gap:16px;margin:16px 0;">
+          <div style="background:rgba(0,0,0,0.35);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-glow);text-align:center;">
+            <div style="font-size:11px;color:#94a3b8;letter-spacing:1px;">YOUR ROOM CODE</div>
+            <div id="p2p-my-code-display" style="font-family:var(--font-display);font-size:24px;font-weight:900;color:var(--neon-cyan);margin:6px 0;letter-spacing:3px;">INITIALIZING...</div>
+            <button id="btn-copy-p2p-link" class="cyber-btn sm neon-green w-full">📋 Copy Invite Link</button>
+          </div>
+
+          <div style="text-align:center;color:#64748b;font-family:var(--font-hud);font-size:12px;font-weight:700;">— OR JOIN A FRIEND'S CODE —</div>
+
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="p2p-input-code" placeholder="Enter 4-letter Code" maxlength="12" style="flex:1;background:rgba(0,0,0,0.4);border:1px solid var(--border-dim);border-radius:var(--radius-sm);color:#fff;padding:8px 12px;font-family:var(--font-display);font-size:14px;text-transform:uppercase;" />
+            <button id="btn-connect-p2p" class="cyber-btn sm neon-primary">⚡ Connect</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
+
+  <!-- Real-Time Notification Toasts -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/audio.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
