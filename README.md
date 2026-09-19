@@ -1,176 +1,113 @@
-# ⚔️ NEO-TIC: Tactical Multiplayer Arena
+# 🎮 NeoArcade: Real-Time Cyber Multiplayer Gaming Platform
 
-> An ultra-modern, cinematic, real-time multiplayer Tic-Tac-Toe gaming platform designed for seamless LAN / same Wi-Fi play, instant Docker self-hosting, and 1-click cloud deployment.
+[![GitHub Pages](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-00f0ff?style=for-the-badge&logo=github)](https://venkatsai20032.github.io/NeoArcade/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.x%20LTS-00ff88?style=for-the-badge&logo=node.js)](https://nodejs.org/)
+[![Socket.io](https://img.shields.io/badge/Socket.io-v4.8-ff0055?style=for-the-badge&logo=socket.io)](https://socket.io/)
+[![SQLite](https://img.shields.io/badge/SQLite-Built--in%20Sync-ffb700?style=for-the-badge&logo=sqlite)](https://nodejs.org/api/sqlite.html)
+[![License: MIT](https://img.shields.io/badge/License-MIT-9d00ff?style=for-the-badge)](LICENSE)
 
-![Neo-Tic Arena](public/index.html)
-
----
-
-## ⚡ Core Features & Mechanics
-
-1. **Same Wi-Fi Real-Time Play**:
-   - Automatic local LAN IP detection (`os.networkInterfaces`).
-   - Generates an in-app dynamic **QR Code** and direct LAN URL (`http://<your-lan-ip>:3000`) so friends on phones, tablets, or laptops on the same Wi-Fi join in 1 click without installing any apps.
-2. **Real-Time Presence & 1-Click Quick Match**:
-   - Continuous Socket.io synchronization with auto-reconnect.
-   - **`⚡ QUICK CONNECT & PLAY`** hero banner automatically matches you with available players on your Wi-Fi network.
-   - Real-time audio alert & floating toast notification whenever an opponent enters the lobby.
-3. **Responsive, Scalable & Minimizable Design**:
-   - **Scalable**: Fluid holographic board scales dynamically across 4K monitors, desktops, laptops, tablets, and phones (down to 320px width).
-   - **Minimizable Panels**:
-     - Collapse player stats banner into a compact chip (`▲ / ▼`) to maximize arena room.
-     - Collapse/Expand side panel (`⛶`) to give 100% width to active warriors.
-     - Arena Fullscreen / Scaled Mode (`⛶`) for distraction-free combat.
-   - **Mobile Touch Optimized**: Zero tap delay (`touch-action: manipulation`), safe-area padding for mobile notches.
-4. **Challenge & 30-Second Countdown Dial**:
-   - Send combat invitations directly to any warrior in the lobby.
-   - 30-second animated SVG countdown ring on receiver's screen with alert audio.
-   - Connection established sequence upon acceptance.
-5. **Interactive Symbol Chooser ("X" / "O")**:
-   - Host chooses "X" (Strikes First) or "O" (Tactical Second) before Round 1 with live mirroring.
-6. **5-Second Battle Countdown**:
-   - Fullscreen holographic countdown (5, 4, 3, 2, 1, ENGAGE!) with audio beeps and fight gong.
-7. **Clean Cyberpunk Arena Layout**:
-   - **Board in the middle**: 3x3 holographic glass grid with laser cuts, plasma bursts, and glowing winning strike vectors.
-   - **Player 1 on Left side**: Live Cyber HUD, score counter, and pulsing active-turn aura.
-   - **Player 2 on Right side**: Mirrored Cyber HUD.
-   - **Bottom Chooser dock**: Status ribbon with assigned symbol and tactical actions.
-8. **3-Round Tournament Battle System**:
-   - Progression: `ROUND 1` ➔ `ROUND 2` ➔ `FINAL ROUND`.
-   - **Draw / Clash Replay Mechanics**: If a round ends in a tie/draw, a "CLASH DETECTED" alarm triggers and the **same round is immediately replayed** until a decisive victor emerges!
-9. **Victory Ceremony & Celebrations**:
-   - Canvas particle confetti fireworks, victory fanfare, and final score presentation.
-   - Achievement unlocks (*First Blood*, *Tactical Champion*, *Flawless Dominance*, *Clash Survivor*, *Seasoned Gladiator*).
-10. **Zero-Dependency SQLite Persistence**:
-    - Uses Node.js native `node:sqlite` for persistent storage without native compilation hurdles.
-11. **Procedural Web Audio API Engine**:
-    - 100% synthesized sound effects generated on-the-fly (zero external audio file downloads).
+An ultra-modern, esports-grade multiplayer cyber gaming platform designed for seamless **Same Wi-Fi LAN play** and instant **Serverless GitHub Pages static hosting**. Built with a sleek dark sci-fi aesthetic, touch-optimized responsive HUDs, procedural Web Audio sound design, dynamic particle animations, 3-round tournament rules with draw-replay mechanics, and local SQLite persistence.
 
 ---
 
-## 🐳 1-Click Self-Hosting (Docker & Docker Compose)
+## 🌐 Live Static Web Hosting
 
-NEO-TIC Arena is completely self-contained with zero external database dependencies.
-
-### Option A: Docker Compose (Recommended)
-
-```bash
-# Clone the repository
-git clone https://github.com/Venkatsai20032/TTT.git
-cd TTT
-
-# Start in background
-docker compose up -d
-```
-
-Your server is now live at `http://localhost:3000` and accessible to all devices on your Wi-Fi! Player stats and database persist in the `arena-data` volume.
-
-### Option B: Docker CLI
-
-```bash
-# Build Docker image
-docker build -t neo-tic-arena .
-
-# Run container with SQLite volume persistence
-docker run -d \
-  --name neo-tic \
-  -p 3000:3000 \
-  -v neo-tic-data:/app/data \
-  --restart unless-stopped \
-  neo-tic-arena
-```
+Play instantly in your browser (no server or setup required):  
+👉 **[https://venkatsai20032.github.io/NeoArcade/](https://venkatsai20032.github.io/NeoArcade/)**
 
 ---
 
-## 🚀 Bare-Metal / Node.js Host
+## 🕹️ Game Library
+
+### 1. ⚔️ NEO-TIC: Tactical Tic-Tac-Toe Arena (Active)
+- **3-Round Tournament Progression**: Players battle across a best-of-3 series to claim championship victory.
+- **⚡ Clash & Replay Engine**: Draws are treated as high-voltage energy clashes — triggering dramatic sound and visual FX, replaying the round immediately without penalty.
+- **📱 True Native Mobile Responsiveness**: Engineered from the ground up for mobile screens ($360\text{px}-480\text{px}$) and minimized desktop windows without ever requiring "Desktop site" mode. Player HUDs arrange side-by-side above a large, prominent square holographic board.
+- **🔇 Silent by Default**: Web Audio procedural sound design starts **muted by default** (`🔇`), with an instant audio toggle in the top bar.
+
+### 2. 🚀 Upcoming Games Roadmap
+| Game | Status | Description |
+|---|---|---|
+| **🎱 Cyber Carrom** | *In Development* | Physics-based digital carrom board with laser aim, striker momentum, and 2-to-4 player LAN play. |
+| **🐍 Snakes & Ladders: CyberGrid** | *Planned* | Futuristic board race featuring quantum teleporters (ladders) and glitch traps (snakes). |
+| **🎲 Ludo Royale** | *Planned* | 4-player cyber tactical conquest with real-time turn sync and custom power-ups. |
+
+---
+
+## ⚡ Combat Protocols ("On & Off the Server")
+
+NeoArcade features a **Dual-Mode Engine** allowing gameplay both with and without a running backend:
+
+| Protocol | Server Required? | Features |
+|---|---|---|
+| **📶 Wi-Fi LAN Multiplayer** | **YES** (`node server.js`) | Connect any phone, tablet, or PC on the same Wi-Fi network. Auto-detects local LAN IP and displays an in-game QR code for instant 1-tap mobile joins. SQLite persists match history and leaderboards. |
+| **🤖 Solo Cyber AI Combat** | **NO** (Static / Offline) | Tactical AI opponent equipped with 3-in-a-row detection, blocking algorithms, center/corner priority, and 3-round tournament rules. |
+| **👥 Pass & Play (Local Duel)** | **NO** (Static / Offline) | 2 players take turns on a single shared screen (phone, tablet, or laptop). |
+| **🌐 Serverless P2P WebRTC** | **NO** (Static / Offline) | Direct peer-to-peer multiplayer across the internet via PeerJS using a 4-digit room code — zero server cost. |
+
+---
+
+## 📱 Mobile & Responsive Architecture
+
+The gaming arena automatically adapts across all display profiles:
+- **Small Mobile Phones (360px - 480px)**: Side-by-side player HUD strip (`grid-template-areas: "p1 p2" "board board"`), prominent 3x3 holographic board (`min(88vw, 360px)`), and compact thumb-friendly docks.
+- **Narrow Minimized Desktop / Split-Screen**: Fluid layout adjusts cleanly down to 500px width.
+- **Desktop (1024px+)**: Full 3-column arena stage layout with 3D cyber border accents.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend**: Vanilla HTML5, Modern CSS3 (`clamp()`, CSS Grid, Glassmorphism, CSS Custom Properties), JavaScript (ES2022+).
+- **Audio Engine**: Web Audio API (procedural synthesizers, laser strikes, gongs, alert chimes — zero audio asset loading).
+- **FX Engine**: Custom 2D HTML5 Canvas particle system (floating cyber dust, dynamic confetti bursts).
+- **Backend (LAN Mode)**: Node.js, Express, Socket.io 4.8.
+- **Database**: Native Node.js `node:sqlite` (`DatabaseSync` - zero external build dependencies).
+- **Networking**: `os.networkInterfaces()` LAN resolver + client-side SVG QR code generator.
+
+---
+
+## 🚀 Quick Start (Local & LAN Play)
 
 ### Prerequisites
-- Node.js v22.0.0 or higher (v24 recommended)
-- Both devices connected to the same Wi-Fi network
+- Node.js 22 LTS or newer installed.
 
+### 1. Clone & Install
 ```bash
-# 1. Clone repository
-git clone https://github.com/Venkatsai20032/TTT.git
-cd TTT
-
-# 2. Install dependencies
+git clone https://github.com/Venkatsai20032/NeoArcade.git
+cd NeoArcade
 npm install
+```
 
-# 3. Start the server
+### 2. Start the Arena Server
+```bash
 npm start
 ```
-
-### Running in Production with PM2
-
-```bash
-npm install -g pm2
-pm2 start server.js --name "neo-tic"
-pm2 save
-pm2 startup
+The server will output:
+```text
+====================================================
+⚡ NEO-TIC ARENA RUNNING AT:
+   Local Machine:  http://localhost:3000
+   Same Wi-Fi LAN: http://192.168.1.xxx:3000
+====================================================
 ```
 
----
-
-## 📱 Playing Over Same Wi-Fi LAN
-
-1. Start the server on your computer (`npm start` or `docker compose up -d`).
-2. Terminal prints:
-   ```text
-   ====================================================
-   ⚡ NEO-TIC ARENA RUNNING AT:
-      Local Machine:  http://localhost:3000
-      Same Wi-Fi LAN: http://192.168.x.x:3000
-   ====================================================
-   ```
-3. Open `http://localhost:3000` on your PC.
-4. On your mobile phone (connected to same Wi-Fi):
-   - Scan the **Wi-Fi QR Code** displayed in the app header (`📶 Wi-Fi Connect`), OR
-   - Type `http://<your-lan-ip>:3000` into mobile Safari/Chrome.
-5. Enter your callsign, pick an avatar, and click **`⚔️ QUICK CONNECT & PLAY`**!
+### 3. Connect Other Devices on the Same Wi-Fi
+- Open the **Same Wi-Fi LAN** URL on any phone or laptop on the same network.
+- Or simply scan the **QR Code** displayed directly inside the desktop lobby!
 
 ---
 
-## ☁️ 1-Click Git Cloud Deployment
+## 🐳 Docker Deployment
 
-### Deploy to Render
-1. Fork or push this repo to your GitHub account (`https://github.com/Venkatsai20032/TTT`).
-2. In [Render.com](https://render.com) ➔ New **Web Service** ➔ Select repository.
-3. Settings:
-   - **Environment**: `Node`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-4. Click **Deploy**!
-
-### Deploy to Railway
-1. In [Railway.app](https://railway.app) ➔ **New Project** ➔ **Deploy from GitHub repo**.
-2. Railway detects Node.js and starts automatically.
+Run with Docker Compose:
+```bash
+docker compose up --build -d
+```
+Access at `http://localhost:3000`.
 
 ---
 
-## ⚙️ Environment Variables
+## 📜 License
 
-Copy `.env.example` to `.env` to configure:
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | Port to bind the HTTP/WebSocket server |
-| `HOST` | `0.0.0.0` | Network interface to bind |
-| `DATABASE_PATH` | `./arena_game.db` | Path to persistent SQLite database file |
-| `NODE_ENV` | `production` | Environment mode |
-
----
-
-## 🛠️ Technology Stack
-
-- **Server**: Node.js, Express, Socket.io
-- **Database**: Node.js native `node:sqlite` (zero C++ node-gyp build requirements)
-- **Frontend**: Vanilla HTML5, CSS3 Modern Glassmorphism & Cyber Glows, ES6 JavaScript
-- **Sound**: Web Audio API Procedural Synthesizer
-- **Graphics**: HTML5 Canvas Particle Engine
-- **Container**: Docker multi-stage Alpine image
-
----
-
-## 📄 License
-
-MIT License — Feel free to customize and enjoy! Built by [Venkatsai20032](https://github.com/Venkatsai20032).
+MIT License — Copyright (c) 2026 Venkatsai20032
