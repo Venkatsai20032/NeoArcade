@@ -78,21 +78,148 @@
     if (modals[modalKey]) modals[modalKey].classList.add('hidden');
   }
 
-  // 1. Fetch Network Info on Startup
+  let currentLanUrl = '';
+  let detectedNetworkIps = [];
+
+  function renderQrToElement(containerId, text, size = 200) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (typeof window.QRCode !== 'undefined') {
+      try {
+        new window.QRCode(container, {
+          text: text,
+          width: size,
+          height: size,
+          colorDark: '#050811',
+          colorLight: '#ffffff',
+          correctLevel: window.QRCode.CorrectLevel.M
+        });
+
+        const imgOrCanvas = container.querySelector('img, canvas');
+        if (imgOrCanvas) {
+          imgOrCanvas.style.display = 'block';
+          imgOrCanvas.style.margin = '0 auto';
+          imgOrCanvas.style.maxWidth = '100%';
+          imgOrCanvas.style.height = 'auto';
+          imgOrCanvas.style.borderRadius = '4px';
+        }
+        return;
+      } catch (err) {
+        console.warn('Local QRCode render error, falling back:', err);
+      }
+    }
+
+    // High-reliability online/image fallback
+    const img = document.createElement('img');
+    img.alt = 'Wi-Fi QR Code';
+    img.style.display = 'block';
+    img.style.margin = '0 auto';
+    img.style.maxWidth = '100%';
+    img.style.borderRadius = '4px';
+    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=6&data=${encodeURIComponent(text)}`;
+    img.onerror = () => {
+      container.innerHTML = `
+        <div class="qr-offline-placeholder">
+          <span style="font-size:28px;">📶</span>
+          <div style="font-family:var(--font-hud);font-size:12px;color:#050811;margin-top:6px;font-weight:700;">
+            LAN URL:<br>
+            <span style="color:#0284c7;word-break:break-all;">${escapeHtml(text)}</span>
+          </div>
+        </div>
+      `;
+    };
+    container.appendChild(img);
+  }
+
+  function updateNetworkDisplay(url, qrDataUrl = null, allIps = []) {
+    if (!url) return;
+    currentLanUrl = url;
+
+    const modalUrlInput = document.getElementById('modal-wifi-url');
+    if (modalUrlInput) modalUrlInput.value = url;
+
+    const sideUrlInput = document.getElementById('wifi-lan-url');
+    if (sideUrlInput) sideUrlInput.value = url;
+
+    // Render client-side vector/canvas QR codes
+    renderQrToElement('modal-wifi-qr-target', url, 210);
+    renderQrToElement('wifi-qr-target', url, 160);
+
+    // Legacy image elements if needed
+    if (qrDataUrl) {
+      const modalImg = document.getElementById('modal-wifi-qr-img');
+      if (modalImg) modalImg.src = qrDataUrl;
+      const sideImg = document.getElementById('wifi-qr-img');
+      if (sideImg) sideImg.src = qrDataUrl;
+    }
+
+    // Multiple adapter switcher
+    if (allIps && allIps.length > 1) {
+      detectedNetworkIps = allIps;
+      const adapterRow = document.getElementById('wifi-adapter-selector-row');
+      const adapterSelect = document.getElementById('wifi-adapter-select');
+      if (adapterRow && adapterSelect) {
+        adapterRow.classList.remove('hidden');
+        adapterSelect.innerHTML = allIps.map(item => `
+          <option value="${item.url}" ${item.url === url ? 'selected' : ''}>
+            ${escapeHtml(item.name)} (${item.ip})
+          </option>
+        `).join('');
+
+        adapterSelect.onchange = (e) => {
+          updateNetworkDisplay(e.target.value, null, detectedNetworkIps);
+        };
+      }
+    }
+  }
+
+  // 1. Fetch Network Info on Startup & Refresh
   async function loadNetworkInfo() {
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    const defaultUrl = isGitHubPages 
+      ? window.location.href 
+      : `${window.location.protocol}//${window.location.hostname || 'localhost'}:${window.location.port || '3000'}`;
+
+    // Immediately show default URL & QR so modal is never empty or broken
+    updateNetworkDisplay(defaultUrl);
+
+    if (isGitHubPages) {
+      const ghBanner = document.getElementById('wifi-github-pages-banner');
+      if (ghBanner) ghBanner.classList.remove('hidden');
+      const statusPill = document.getElementById('wifi-status-pill');
+      if (statusPill) {
+        statusPill.innerHTML = `<span class="pulse-dot-blue"></span> GITHUB PAGES CLOUD`;
+        statusPill.className = 'wifi-status-indicator cloud';
+      }
+      const intro = document.getElementById('wifi-modal-intro');
+      if (intro) {
+        intro.textContent = 'Scan with mobile camera to join immediately, or use direct P2P room:';
+      }
+      return;
+    }
+
     try {
       const res = await fetch('/api/network-info');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (data.qrCodeDataUrl) {
-        document.getElementById('wifi-qr-img').src = data.qrCodeDataUrl;
-        document.getElementById('modal-wifi-qr-img').src = data.qrCodeDataUrl;
-      }
-      if (data.lanUrl) {
-        document.getElementById('wifi-lan-url').value = data.lanUrl;
-        document.getElementById('modal-wifi-url').value = data.lanUrl;
+      if (data && data.lanUrl) {
+        updateNetworkDisplay(data.lanUrl, data.qrCodeDataUrl, data.allIps || []);
+        const statusPill = document.getElementById('wifi-status-pill');
+        if (statusPill) {
+          statusPill.innerHTML = `<span class="pulse-dot-green"></span> LAN DETECTED: ${data.localIp}`;
+          statusPill.className = 'wifi-status-indicator online';
+        }
       }
     } catch (e) {
-      console.warn('Network info fetch error:', e);
+      console.warn('Network info backend fetch not available, running in standalone mode:', e);
+      const statusPill = document.getElementById('wifi-status-pill');
+      if (statusPill) {
+        statusPill.innerHTML = `<span class="pulse-dot-blue"></span> STANDALONE / LOCAL`;
+        statusPill.className = 'wifi-status-indicator cloud';
+      }
     }
   }
 
@@ -211,11 +338,15 @@
   });
 
   if (socket) {
-    socket.on('user:registered', ({ user }) => {
+    socket.on('user:registered', ({ user, network }) => {
       currentUser = user;
       localStorage.setItem('neo_tic_user_id', user.id);
       localStorage.setItem('neo_tic_username', user.username);
       localStorage.setItem('neo_tic_avatar', user.avatar);
+
+      if (network && network.lanUrl) {
+        updateNetworkDisplay(network.lanUrl);
+      }
 
       updateUserProfileUI();
       showScreen('lobby');
@@ -549,12 +680,13 @@
 
     // Render Players List
     if (players.length <= 1) {
+      const playableUrl = currentLanUrl || document.getElementById('wifi-lan-url')?.value || window.location.href;
       listEl.innerHTML = `
         <div class="empty-state">
           <div style="font-size:28px;margin-bottom:8px;">📡</div>
           <strong style="color:#fff;font-size:15px;">You are currently the only player in the arena lobby.</strong><br><br>
           <span style="font-size:13px;color:var(--neon-cyan);">
-            To connect & play: Open <strong>${document.getElementById('wifi-lan-url')?.value || 'http://192.168.1.5:3000'}</strong> on your phone or scan the Wi-Fi QR code!
+            To connect & play: Open <strong>${escapeHtml(playableUrl)}</strong> on your phone or scan the Wi-Fi QR code!
           </span>
           <div style="margin-top:14px;">
             <button class="cyber-btn sm neon-blue" onclick="document.getElementById('wifi-info-btn').click()">
@@ -605,9 +737,19 @@
       btn.addEventListener('click', () => {
         window.soundEngine.playClick();
         const targetUserId = btn.dataset.userId;
+        if (!socket || !socket.connected) {
+          showToast('⚠️ Arena server not connected. Connect both devices to the same Wi-Fi network.');
+          return;
+        }
         btn.textContent = 'TRANSMITTING...';
         btn.disabled = true;
         socket.emit('challenge:send', { targetUserId });
+        setTimeout(() => {
+          if (btn.textContent === 'TRANSMITTING...') {
+            btn.textContent = '⚔️ CONNECT & PLAY';
+            btn.disabled = false;
+          }
+        }, 5000);
       });
     });
   });
@@ -1666,11 +1808,45 @@
   document.getElementById('wifi-info-btn').addEventListener('click', () => {
     window.soundEngine.playClick();
     showModal('wifi');
+    loadNetworkInfo();
   });
 
   document.getElementById('btn-close-wifi').addEventListener('click', () => {
     hideModal('wifi');
   });
+
+  // Modal open in new tab
+  const btnOpenModalWifi = document.getElementById('btn-modal-open-wifi');
+  if (btnOpenModalWifi) {
+    btnOpenModalWifi.addEventListener('click', () => {
+      window.soundEngine.playClick();
+      const url = document.getElementById('modal-wifi-url')?.value;
+      if (url) window.open(url, '_blank');
+    });
+  }
+
+  // Modal manual URL edit
+  const modalWifiInput = document.getElementById('modal-wifi-url');
+  if (modalWifiInput) {
+    modalWifiInput.addEventListener('input', (e) => {
+      const customUrl = e.target.value.trim();
+      if (customUrl) {
+        document.getElementById('wifi-lan-url').value = customUrl;
+        renderQrToElement('modal-wifi-qr-target', customUrl, 210);
+        renderQrToElement('wifi-qr-target', customUrl, 160);
+      }
+    });
+  }
+
+  // GitHub Pages banner to P2P button
+  const btnWifiToP2p = document.getElementById('btn-wifi-to-p2p');
+  if (btnWifiToP2p) {
+    btnWifiToP2p.addEventListener('click', () => {
+      window.soundEngine.playClick();
+      hideModal('wifi');
+      showModal('p2pRoom');
+    });
+  }
 
   // Copy Buttons
   function copyText(inputId, btnId) {
@@ -1681,6 +1857,8 @@
       const prev = btn.textContent;
       btn.textContent = 'COPIED!';
       setTimeout(() => { btn.textContent = prev; }, 2000);
+    }).catch(() => {
+      showToast(input.value);
     });
   }
 

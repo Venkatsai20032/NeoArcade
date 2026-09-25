@@ -18,6 +18,8 @@
   <script src="/socket.io/socket.io.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.8.1/socket.io.min.js';"></script>
   <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Offline-First Client QR Code Generator with CDN Fallback -->
+  <script src="js/qrcode.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';"></script>
 </head>
 <body>
   <!-- Ambient Particle Canvas -->
@@ -215,11 +217,13 @@
             <div class="tab-content active" id="tab-wifi">
               <div class="wifi-share-box">
                 <p class="wifi-desc">Scan with mobile phone on the same Wi-Fi or share LAN URL:</p>
-                <div class="qr-container">
-                  <img id="wifi-qr-img" src="" alt="Wi-Fi QR Code" class="qr-image" />
+                <div class="qr-card-sm">
+                  <div id="wifi-qr-target" class="qr-code-holder-sm">
+                    <img id="wifi-qr-img" src="" alt="Wi-Fi QR Code" class="qr-image hidden" />
+                  </div>
                 </div>
                 <div class="lan-url-box">
-                  <input type="text" id="wifi-lan-url" readonly value="Detecting..." />
+                  <input type="text" id="wifi-lan-url" readonly value="" placeholder="Detecting LAN..." />
                   <button id="btn-copy-wifi" class="cyber-btn sm neon-blue">Copy</button>
                 </div>
               </div>
@@ -507,21 +511,53 @@
 
     <!-- WI-FI QUICK CONNECT MODAL -->
     <!-- WI-FI QUICK CONNECT MODAL -->
+    <!-- SAME WI-FI MULTIPLAYER MODAL -->
     <div id="modal-wifi-info" class="cinematic-modal-overlay hidden">
       <div class="cyber-panel wifi-modal-panel">
         <div class="panel-header-row">
-          <h3>📶 SAME WI-FI MULTIPLAYER</h3>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:22px;">📶</span>
+            <div>
+              <h3 style="margin:0;">SAME WI-FI MULTIPLAYER</h3>
+              <div id="wifi-status-pill" class="wifi-status-indicator">
+                <span class="pulse-dot-green"></span> DETECTING LAN...
+              </div>
+            </div>
+          </div>
           <button id="btn-close-wifi" class="close-x-btn">✕</button>
         </div>
-        <p class="modal-intro">Any player connected to the same Wi-Fi network can join this arena immediately:</p>
+        <p class="modal-intro" id="wifi-modal-intro">Any player connected to the same Wi-Fi network can join this arena immediately:</p>
         
-        <div class="qr-big-box">
-          <img id="modal-wifi-qr-img" src="" alt="Wi-Fi QR Code" class="qr-image-big" />
+        <!-- Multiple Adapters / IP Switcher (Auto-shown if multiple IPs detected) -->
+        <div id="wifi-adapter-selector-row" class="adapter-selector-row hidden">
+          <label class="adapter-label">ADAPTER:</label>
+          <select id="wifi-adapter-select" class="cyber-select"></select>
+        </div>
+
+        <div class="qr-big-card">
+          <div id="modal-wifi-qr-target" class="qr-code-holder">
+            <img id="modal-wifi-qr-img" src="" alt="Wi-Fi QR Code" class="qr-image-big hidden" />
+          </div>
+          <div class="qr-scan-badge">⚡ INSTANT 1-TAP MOBILE JOIN</div>
         </div>
 
         <div class="modal-url-row">
-          <input type="text" id="modal-wifi-url" readonly />
-          <button id="btn-modal-copy-wifi" class="cyber-btn neon-blue sm">Copy Link</button>
+          <input type="text" id="modal-wifi-url" placeholder="http://192.168.1.xxx:3000" />
+          <button id="btn-modal-copy-wifi" class="cyber-btn neon-blue sm">📋 Copy Link</button>
+          <button id="btn-modal-open-wifi" class="cyber-btn neon-cyan sm" title="Open Link in New Tab">↗</button>
+        </div>
+
+        <!-- GitHub Pages / Serverless Notice -->
+        <div id="wifi-github-pages-banner" class="github-pages-notice hidden">
+          <div style="font-size:12px;color:var(--neon-green);margin-bottom:4px;font-weight:700;">
+            🌐 PLAYING VIA CLOUD / GITHUB PAGES
+          </div>
+          <p style="font-size:11px;color:#cbd5e1;margin-bottom:8px;">
+            Scan QR on mobile to join! To battle directly across 2 devices without hosting a server, launch P2P:
+          </p>
+          <button id="btn-wifi-to-p2p" class="cyber-btn sm neon-green w-full">
+            ⚡ Open P2P 2-Player Room
+          </button>
         </div>
 
         <div class="wifi-tips">

@@ -18,41 +18,89 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Helper: Get local Wi-Fi / LAN IP address
-function getLocalIpAddress() {
+// Helper: Get local Wi-Fi / LAN IP addresses with intelligent physical adapter prioritization
+function getNetworkInterfacesList() {
   const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
+  const candidates = [];
+  const virtualKeywords = ['vethernet', 'virtual', 'vbox', 'vmware', 'wsl', 'tailscale', 'docker', 'loopback', 'pseudo', 'zerotier', 'bluetooth', 'tunnel'];
+
+  for (const [name, ifaceList] of Object.entries(interfaces)) {
+    const lowerName = name.toLowerCase();
+    const isVirtual = virtualKeywords.some(k => lowerName.includes(k));
+
+    for (const iface of ifaceList) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
+        if (iface.address.startsWith('169.254.')) continue;
+
+        let priority = 10;
+        if (lowerName.includes('wi-fi') || lowerName.includes('wifi') || lowerName.includes('wlan') || lowerName.includes('wireless')) {
+          priority = 1;
+        } else if (lowerName.includes('ethernet') || lowerName.includes('eth') || lowerName.includes('lan') || lowerName.includes('en')) {
+          priority = 2;
+        }
+
+        if (isVirtual) priority += 50;
+
+        candidates.push({
+          name,
+          address: iface.address,
+          priority
+        });
       }
     }
+  }
+
+  candidates.sort((a, b) => a.priority - b.priority);
+  return candidates;
+}
+
+function getBestLocalIp() {
+  const list = getNetworkInterfacesList();
+  if (list.length > 0) {
+    return list[0].address;
   }
   return 'localhost';
 }
 
-const localIp = getLocalIpAddress();
-
 // REST API for network info & QR code
 app.get('/api/network-info', async (req, res) => {
   try {
-    const lanUrl = `http://${localIp}:${PORT}`;
+    const list = getNetworkInterfacesList();
+    const primaryIp = list.length > 0 ? list[0].address : 'localhost';
+    const lanUrl = `http://${primaryIp}:${PORT}`;
+    const allIps = list.map(item => ({
+      name: item.name,
+      ip: item.address,
+      url: `http://${item.address}:${PORT}`
+    }));
+
     const qrCodeDataUrl = await QRCode.toDataURL(lanUrl, {
       color: {
-        dark: '#00f0ff',
-        light: '#080a14'
+        dark: '#050811',
+        light: '#ffffff'
       },
-      margin: 1,
+      margin: 2,
       width: 256
     });
+
     res.json({
-      localIp,
+      status: 'online',
+      localIp: primaryIp,
       port: PORT,
       lanUrl,
+      allIps,
       qrCodeDataUrl
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to generate network QR code' });
+    console.error('Failed to generate network QR code:', err);
+    res.json({
+      status: 'fallback',
+      localIp: 'localhost',
+      port: PORT,
+      lanUrl: `http://localhost:${PORT}`,
+      allIps: [],
+      qrCodeDataUrl: ''
+    });
   }
 });
 
@@ -155,12 +203,13 @@ io.on('connection', (socket) => {
 
     console.log(`[ARENA] User registered/active: ${user.username} (${user.id}) on socket ${socket.id}. Total online: ${connectedUsers.size}`);
 
+    const activeIp = getBestLocalIp();
     socket.emit('user:registered', {
       user,
       network: {
-        localIp,
+        localIp: activeIp,
         port: PORT,
-        lanUrl: `http://${localIp}:${PORT}`
+        lanUrl: `http://${activeIp}:${PORT}`
       }
     });
 
@@ -762,9 +811,10 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
+  const activeIp = getBestLocalIp();
   console.log(`====================================================`);
   console.log(`⚡ NEO-TIC ARENA RUNNING AT:`);
   console.log(`   Local Machine:  http://localhost:${PORT}`);
-  console.log(`   Same Wi-Fi LAN: http://${localIp}:${PORT}`);
+  console.log(`   Same Wi-Fi LAN: http://${activeIp}:${PORT}`);
   console.log(`====================================================`);
 });
