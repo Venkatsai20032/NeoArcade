@@ -145,6 +145,11 @@ function generateMatchId() {
   return 'arena_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 }
 
+const COUNTDOWN_MS = process.env.COUNTDOWN_MS ? parseInt(process.env.COUNTDOWN_MS, 10) : 5000;
+const CONCLUDE_DELAY_MS = process.env.CONCLUDE_DELAY_MS ? parseInt(process.env.CONCLUDE_DELAY_MS, 10) : 3200;
+const ROUND_DELAY_MS = process.env.ROUND_DELAY_MS ? parseInt(process.env.ROUND_DELAY_MS, 10) : 3500;
+const CLASH_DELAY_MS = process.env.CLASH_DELAY_MS ? parseInt(process.env.CLASH_DELAY_MS, 10) : 3000;
+
 const WIN_COMBOS = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8], // Horizontal
   [0, 3, 6], [1, 4, 7], [2, 5, 8], // Vertical
@@ -459,7 +464,7 @@ io.on('connection', (socket) => {
         p1: active.p1,
         p2: active.p2
       });
-    }, 5000);
+    }, COUNTDOWN_MS);
   });
 
   // 6. Game Move
@@ -523,7 +528,7 @@ io.on('connection', (socket) => {
         }
         match.conclusionTimer = setTimeout(() => {
           concludeTournament(match);
-        }, 3200);
+        }, CONCLUDE_DELAY_MS);
       } else {
         // Prepare next round (Round 2 or Final Round)
         match.currentRound++;
@@ -547,7 +552,7 @@ io.on('connection', (socket) => {
             p1: match.p1,
             p2: match.p2
           });
-        }, 3500);
+        }, ROUND_DELAY_MS);
       }
       return;
     }
@@ -571,7 +576,7 @@ io.on('connection', (socket) => {
         message: `CLASH DETECTED! NO GROUND YIELDED. REPLAYING ${match.roundName}!`
       });
 
-      // Reset same round after 3 seconds
+      // Reset same round after clash delay
       setTimeout(() => {
         if (!activeMatches.has(matchId)) return;
         match.status = 'playing';
@@ -590,7 +595,7 @@ io.on('connection', (socket) => {
           p2: match.p2,
           isClashReplay: true
         });
-      }, 3000);
+      }, CLASH_DELAY_MS);
       return;
     }
 
@@ -645,24 +650,26 @@ io.on('connection', (socket) => {
       console.error('[ARENA] Error recording match to DB:', err);
     }
 
-    if (!dbResult) return;
+    const effectiveP1 = (dbResult && dbResult.p1) || connectedUsers.get(match.p1.id)?.user || { id: match.p1.id, username: match.p1.username };
+    const effectiveP2 = (dbResult && dbResult.p2) || connectedUsers.get(match.p2.id)?.user || { id: match.p2.id, username: match.p2.username };
+    const effectiveAchievements = (dbResult && dbResult.newAchievements) || { p1: [], p2: [] };
 
     // Update sessions in memory
     const s1 = connectedUsers.get(match.p1.id);
     const s2 = connectedUsers.get(match.p2.id);
-    if (s1 && dbResult.p1) s1.user = dbResult.p1;
-    if (s2 && dbResult.p2) s2.user = dbResult.p2;
+    if (s1 && effectiveP1) s1.user = effectiveP1;
+    if (s2 && effectiveP2) s2.user = effectiveP2;
 
     io.to(match.roomName).emit('game:tournament_concluded', {
       matchId: match.id,
       winnerId: tournamentWinnerId,
       winnerName: tournamentWinnerName,
       scores: match.scores,
-      p1: dbResult.p1,
-      p2: dbResult.p2,
+      p1: effectiveP1,
+      p2: effectiveP2,
       roundsPlayed: match.roundsPlayed,
       clashesCount: match.clashesCount,
-      newAchievements: dbResult.newAchievements
+      newAchievements: effectiveAchievements
     });
 
     broadcastLobby();
@@ -758,6 +765,11 @@ io.on('connection', (socket) => {
         clearTimeout(match.conclusionTimer);
         match.conclusionTimer = null;
       }
+      const otherUserId = match.p1.id === userId ? match.p2.id : match.p1.id;
+      const otherSession = connectedUsers.get(otherUserId);
+      if (otherSession && otherSession.status === 'in_battle') {
+        otherSession.status = 'available';
+      }
       io.to(match.roomName).emit('game:player_exited', { userId });
       activeMatches.delete(matchId);
     }
@@ -810,11 +822,15 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  const activeIp = getBestLocalIp();
-  console.log(`====================================================`);
-  console.log(`⚡ NEO-TIC ARENA RUNNING AT:`);
-  console.log(`   Local Machine:  http://localhost:${PORT}`);
-  console.log(`   Same Wi-Fi LAN: http://${activeIp}:${PORT}`);
-  console.log(`====================================================`);
-});
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    const activeIp = getBestLocalIp();
+    console.log(`====================================================`);
+    console.log(`⚡ NEO-TIC ARENA RUNNING AT:`);
+    console.log(`   Local Machine:  http://localhost:${PORT}`);
+    console.log(`   Same Wi-Fi LAN: http://${activeIp}:${PORT}`);
+    console.log(`====================================================`);
+  });
+}
+
+module.exports = { app, server, io };

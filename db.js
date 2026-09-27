@@ -214,7 +214,7 @@ function recordMatch({ matchId, p1, p2, p1Score, p2Score, winnerId, clashesCount
     if ((clashesCount || 0) > 0) {
       if (unlockAchievement(p1.id, 'clash_survivor')) newAchievements.p1.push(BADGE_DEFINITIONS.clash_survivor);
     }
-    if (updatedP1.wins >= 5) {
+    if (updatedP1 && updatedP1.wins >= 5) {
       if (unlockAchievement(p1.id, 'legend')) newAchievements.p1.push(BADGE_DEFINITIONS.legend);
     }
   } else if (isP2Winner) {
@@ -225,15 +225,15 @@ function recordMatch({ matchId, p1, p2, p1Score, p2Score, winnerId, clashesCount
     if ((clashesCount || 0) > 0) {
       if (unlockAchievement(p2.id, 'clash_survivor')) newAchievements.p2.push(BADGE_DEFINITIONS.clash_survivor);
     }
-    if (updatedP2.wins >= 5) {
+    if (updatedP2 && updatedP2.wins >= 5) {
       if (unlockAchievement(p2.id, 'legend')) newAchievements.p2.push(BADGE_DEFINITIONS.legend);
     }
   }
 
-  if (updatedP1.matches_played >= 3) {
+  if (updatedP1 && updatedP1.matches_played >= 3) {
     if (unlockAchievement(p1.id, 'seasoned_warrior')) newAchievements.p1.push(BADGE_DEFINITIONS.seasoned_warrior);
   }
-  if (updatedP2.matches_played >= 3) {
+  if (updatedP2 && updatedP2.matches_played >= 3) {
     if (unlockAchievement(p2.id, 'seasoned_warrior')) newAchievements.p2.push(BADGE_DEFINITIONS.seasoned_warrior);
   }
 

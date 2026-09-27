@@ -108,6 +108,21 @@ Access at `http://localhost:3000`.
 
 ---
 
+## 🧪 Automated Testing
+
+NeoArcade includes an automated test suite utilizing the native Node.js test runner (`node:test` & `node:assert`):
+
+```bash
+npm test
+```
+
+### Test Coverage Highlights:
+- **Database & Persistence (`test/db.test.js`)**: Tests player registration, case-insensitivity, rating calculations (+25/-15), idempotency guards, achievement badge unlocks (`First Blood`, `Tactical Champion`, `Flawless Dominance`, `Clash Survivor`), and leaderboard ranking.
+- **REST API & Static Hosting (`test/api.test.js`)**: Tests `/api/network-info` LAN addresses, QR code generation, `/api/leaderboard`, `/api/recent-matches`, and static asset delivery.
+- **Real-Time Multiplayer Lifecycle (`test/sockets.test.js`)**: Tests real Socket.io connections, presence broadcasting, direct challenges, symbol negotiation, move turn validation, win combos, surrender handling, rematch synchronization, and exit/disconnect cleanup.
+
+---
+
 ## 📜 License
 
 MIT License — Copyright (c) 2026 Venkatsai20032

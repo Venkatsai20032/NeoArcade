@@ -2162,6 +2162,14 @@
       hideModal('victory');
       showScreen('lobby');
     });
+
+    socket.on('game:player_exited', ({ userId }) => {
+      if (currentUser && userId !== currentUser.id) {
+        showToast('Opponent returned to lobby.');
+        hideModal('victory');
+        showScreen('lobby');
+      }
+    });
   }
 
   document.getElementById('btn-return-lobby').addEventListener('click', () => {
