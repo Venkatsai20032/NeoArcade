@@ -17,7 +17,7 @@
   <!-- Socket.io with Static CDN Fallback for GitHub Pages -->
   <script src="/socket.io/socket.io.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.8.1/socket.io.min.js';"></script>
   <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/peerjs.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';"></script>
   <!-- Offline-First Client QR Code Generator with CDN Fallback -->
   <script src="js/qrcode.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';"></script>
 </head>
@@ -180,7 +180,11 @@
                 <span class="pulse-indicator"></span>
                 <h3>ACTIVE WARRIORS ON WI-FI</h3>
               </div>
-              <div style="display:flex;align-items:center;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div class="room-code-badge" id="lobby-room-badge" title="Current Arena Room Code">
+                  ROOM: <strong id="lobby-room-code-display">----</strong>
+                </div>
+                <button id="btn-change-room" class="cyber-btn sm" title="Join another room code">🔑 Join Code</button>
                 <button id="btn-refresh-lobby" class="cyber-btn sm" title="Re-scan Wi-Fi for opponents">🔄 Re-scan</button>
                 <span class="player-count-badge" id="online-count">1 ONLINE</span>
               </div>
@@ -198,7 +202,22 @@
             </div>
 
             <div class="players-list-container" id="players-list">
-              <div class="empty-state">Scanning Wi-Fi network for opponents...</div>
+              <div class="empty-state">
+                <div style="font-size:28px;margin-bottom:8px;">📡</div>
+                <strong style="color:#fff;font-size:15px;">Waiting for Warriors on the same Wi-Fi network...</strong><br><br>
+                <span style="font-size:13px;color:var(--neon-cyan);">
+                  Scan the Wi-Fi QR code with a mobile phone or share the link:
+                  <br><strong id="lobby-empty-url" style="color:#fff;word-break:break-all;">Detecting...</strong>
+                </span>
+                <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                  <button class="cyber-btn sm neon-blue" onclick="document.getElementById('wifi-info-btn').click()">
+                    📶 View QR Code & Direct Link
+                  </button>
+                  <button id="btn-join-code-prompt" class="cyber-btn sm neon-cyan">
+                    🔑 Join by Room Code
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -588,6 +607,18 @@
             <input type="text" id="p2p-input-code" placeholder="Enter 4-letter Code" maxlength="12" style="flex:1;background:rgba(0,0,0,0.4);border:1px solid var(--border-dim);border-radius:var(--radius-sm);color:#fff;padding:8px 12px;font-family:var(--font-display);font-size:14px;text-transform:uppercase;" />
             <button id="btn-connect-p2p" class="cyber-btn sm neon-primary">⚡ Connect</button>
           </div>
+        </div>
+    <!-- JOIN BY ROOM CODE MODAL -->
+    <div id="modal-join-room" class="cinematic-modal-overlay hidden">
+      <div class="cyber-panel wifi-modal-panel" style="max-width:380px;">
+        <div class="panel-header-row">
+          <h3>🔑 JOIN ARENA ROOM</h3>
+          <button id="btn-close-join-room" class="close-x-btn">✕</button>
+        </div>
+        <p class="modal-intro">Enter the 4-letter Arena Code shown on your friend's screen:</p>
+        <div style="display:flex;gap:8px;margin:16px 0;">
+          <input type="text" id="input-join-room-code" placeholder="e.g. 7K9P" maxlength="8" style="flex:1;background:rgba(0,0,0,0.4);border:1px solid var(--neon-cyan);border-radius:var(--radius-sm);color:#fff;padding:10px 14px;font-family:var(--font-display);font-size:16px;text-transform:uppercase;letter-spacing:3px;text-align:center;" />
+          <button id="btn-submit-join-room" class="cyber-btn neon-primary">Connect</button>
         </div>
       </div>
     </div>

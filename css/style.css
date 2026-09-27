@@ -1894,6 +1894,27 @@ body::before {
   color: var(--neon-cyan);
 }
 
+.room-code-badge {
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid var(--neon-cyan);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-family: var(--font-hud);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  letter-spacing: 1.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.room-code-badge strong {
+  color: #fff;
+  font-family: var(--font-display);
+  letter-spacing: 2px;
+}
+
 .pulse-dot-green {
   width: 7px;
   height: 7px;

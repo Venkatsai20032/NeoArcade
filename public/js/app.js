@@ -45,6 +45,15 @@
   let outgoingChallengeTimer = null;
   let countdownInterval = null;
 
+  // Arena Room & P2P Networking State
+  let currentArenaRoom = '';
+  let isArenaHost = false;
+  let p2pRemoteOpponent = null;
+  let p2pPendingChallenge = null;
+  let peerInstance = null;
+  let p2pActiveConn = null;
+  let isP2pConnecting = false;
+
   // DOM Elements
   const screens = {
     register: document.getElementById('screen-register'),
@@ -60,7 +69,8 @@
     clash: document.getElementById('overlay-clash'),
     victory: document.getElementById('modal-victory'),
     wifi: document.getElementById('modal-wifi-info'),
-    p2pRoom: document.getElementById('modal-p2p-room')
+    p2pRoom: document.getElementById('modal-p2p-room'),
+    joinRoom: document.getElementById('modal-join-room')
   };
 
   function showScreen(screenKey) {
@@ -176,27 +186,69 @@
     }
   }
 
+  function getOrCreateArenaRoom() {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('arena') || params.get('room');
+    if (fromUrl) {
+      currentArenaRoom = fromUrl.trim().toUpperCase();
+      sessionStorage.setItem('neo_tic_arena_room', currentArenaRoom);
+      isArenaHost = false;
+      return { room: currentArenaRoom, isCreator: false };
+    }
+
+    const saved = sessionStorage.getItem('neo_tic_arena_room');
+    if (saved) {
+      currentArenaRoom = saved;
+      isArenaHost = true;
+    } else {
+      currentArenaRoom = Math.random().toString(36).substring(2, 6).toUpperCase();
+      sessionStorage.setItem('neo_tic_arena_room', currentArenaRoom);
+      isArenaHost = true;
+    }
+
+    try {
+      const newUrl = window.location.pathname + '?arena=' + currentArenaRoom;
+      window.history.replaceState({}, '', newUrl);
+    } catch (e) {}
+
+    return { room: currentArenaRoom, isCreator: true };
+  }
+
   // 1. Fetch Network Info on Startup & Refresh
   async function loadNetworkInfo() {
     const isGitHubPages = window.location.hostname.includes('github.io');
-    const defaultUrl = isGitHubPages 
-      ? window.location.href 
-      : `${window.location.protocol}//${window.location.hostname || 'localhost'}:${window.location.port || '3000'}`;
+    const { room } = getOrCreateArenaRoom();
+
+    const roomDisplay = document.getElementById('lobby-room-code-display');
+    if (roomDisplay) roomDisplay.textContent = room;
+
+    const p2pCodeDisplay = document.getElementById('p2p-my-code-display');
+    if (p2pCodeDisplay) p2pCodeDisplay.textContent = room;
+
+    let shareUrl = '';
+    if (isGitHubPages) {
+      shareUrl = `${window.location.origin}${window.location.pathname}?arena=${room}`;
+    } else {
+      shareUrl = `${window.location.protocol}//${window.location.hostname || 'localhost'}:${window.location.port || '3000'}`;
+    }
 
     // Immediately show default URL & QR so modal is never empty or broken
-    updateNetworkDisplay(defaultUrl);
+    updateNetworkDisplay(shareUrl);
+
+    const emptyUrlEl = document.getElementById('lobby-empty-url');
+    if (emptyUrlEl) emptyUrlEl.textContent = shareUrl;
 
     if (isGitHubPages) {
       const ghBanner = document.getElementById('wifi-github-pages-banner');
       if (ghBanner) ghBanner.classList.remove('hidden');
       const statusPill = document.getElementById('wifi-status-pill');
       if (statusPill) {
-        statusPill.innerHTML = `<span class="pulse-dot-blue"></span> GITHUB PAGES CLOUD`;
-        statusPill.className = 'wifi-status-indicator cloud';
+        statusPill.innerHTML = `<span class="pulse-dot-green"></span> ARENA ROOM: ${room}`;
+        statusPill.className = 'wifi-status-indicator online';
       }
       const intro = document.getElementById('wifi-modal-intro');
       if (intro) {
-        intro.textContent = 'Scan with mobile camera to join immediately, or use direct P2P room:';
+        intro.textContent = `Scan with mobile camera to join Arena Room [ ${room} ] immediately:`;
       }
       return;
     }
@@ -207,6 +259,7 @@
       const data = await res.json();
       if (data && data.lanUrl) {
         updateNetworkDisplay(data.lanUrl, data.qrCodeDataUrl, data.allIps || []);
+        if (emptyUrlEl) emptyUrlEl.textContent = data.lanUrl;
         const statusPill = document.getElementById('wifi-status-pill');
         if (statusPill) {
           statusPill.innerHTML = `<span class="pulse-dot-green"></span> LAN DETECTED: ${data.localIp}`;
@@ -217,8 +270,8 @@
       console.warn('Network info backend fetch not available, running in standalone mode:', e);
       const statusPill = document.getElementById('wifi-status-pill');
       if (statusPill) {
-        statusPill.innerHTML = `<span class="pulse-dot-blue"></span> STANDALONE / LOCAL`;
-        statusPill.className = 'wifi-status-indicator cloud';
+        statusPill.innerHTML = `<span class="pulse-dot-green"></span> ARENA ROOM: ${room}`;
+        statusPill.className = 'wifi-status-indicator online';
       }
     }
   }
@@ -333,7 +386,8 @@
 
       updateUserProfileUI();
       showScreen('lobby');
-      showToast('⚡ Standalone Mode: Play vs Cyber AI, Local Duel, or P2P WebRTC!');
+      initP2pArenaNetwork();
+      renderP2pLobby();
     }
   });
 
@@ -442,6 +496,8 @@
         };
         updateUserProfileUI();
         showScreen('lobby');
+        initP2pArenaNetwork();
+        renderP2pLobby();
       }
     }
   }
@@ -611,6 +667,7 @@
     });
 
     // Re-scan Wi-Fi button
+    // Re-scan Wi-Fi button
     const refreshBtn = document.getElementById('btn-refresh-lobby');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {
@@ -618,6 +675,11 @@
         refreshBtn.textContent = '🔄 Scanning...';
         if (socket && socket.connected) {
           socket.emit('lobby:refresh');
+        } else {
+          if (!p2pRemoteOpponent && peerInstance) {
+            const { room } = getOrCreateArenaRoom();
+            connectToPeerHost(`neoarc-${room}-h`);
+          }
         }
         setTimeout(() => {
           refreshBtn.textContent = '🔄 Re-scan';
@@ -632,28 +694,96 @@
         window.soundEngine.playClick();
         if (socket && socket.connected) {
           socket.emit('match:quick_match');
+        } else if (p2pActiveConn && p2pRemoteOpponent) {
+          triggerP2pChallenge();
         } else {
           startAiCombat();
         }
       });
     }
+
+    // Wire up Join Room Code Modal buttons
+    const btnChangeRoom = document.getElementById('btn-change-room');
+    if (btnChangeRoom) btnChangeRoom.addEventListener('click', openJoinModal);
+
+    const btnJoinPrompt = document.getElementById('btn-join-code-prompt');
+    if (btnJoinPrompt) btnJoinPrompt.addEventListener('click', openJoinModal);
+
+    const btnCloseJoin = document.getElementById('btn-close-join-room');
+    if (btnCloseJoin) btnCloseJoin.addEventListener('click', closeJoinModal);
+
+    const btnSubmitJoin = document.getElementById('btn-submit-join-room');
+    if (btnSubmitJoin) {
+      btnSubmitJoin.addEventListener('click', () => {
+        const inp = document.getElementById('input-join-room-code');
+        if (inp) handleJoinRoomCode(inp.value);
+      });
+    }
+
+    const inputJoin = document.getElementById('input-join-room-code');
+    if (inputJoin) {
+      inputJoin.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleJoinRoomCode(inputJoin.value);
+      });
+    }
   });
+
+  function openJoinModal() {
+    window.soundEngine.playClick();
+    const modal = document.getElementById('modal-join-room');
+    if (modal) modal.classList.remove('hidden');
+    const input = document.getElementById('input-join-room-code');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), 100);
+    }
+  }
+
+  function closeJoinModal() {
+    const modal = document.getElementById('modal-join-room');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function handleJoinRoomCode(code) {
+    const cleanCode = (code || '').trim().toUpperCase();
+    if (!cleanCode) return;
+    closeJoinModal();
+    sessionStorage.setItem('neo_tic_arena_room', cleanCode);
+    try {
+      const newUrl = window.location.pathname + '?arena=' + cleanCode;
+      window.history.replaceState({}, '', newUrl);
+    } catch (e) {}
+    currentArenaRoom = cleanCode;
+    const roomDisplay = document.getElementById('lobby-room-code-display');
+    if (roomDisplay) roomDisplay.textContent = cleanCode;
+    showToast(`🔄 Switching to Arena Room [${cleanCode}]...`);
+    if (peerInstance) {
+      try { peerInstance.destroy(); } catch (e) {}
+      peerInstance = null;
+    }
+    p2pActiveConn = null;
+    p2pRemoteOpponent = null;
+    loadNetworkInfo();
+    initP2pArenaNetwork();
+    renderP2pLobby();
+  }
 
   // 5. Lobby List Updates
   let lastKnownOpponentsCount = 0;
 
-  socket.on('lobby:update', (players) => {
+  function renderLobby(players) {
+    if (!players || !Array.isArray(players)) return;
     const listEl = document.getElementById('players-list');
     const countEl = document.getElementById('online-count');
     const quickBanner = document.getElementById('quick-match-banner');
     const quickText = document.getElementById('quick-match-text');
 
-    countEl.textContent = `${players.length} ONLINE`;
+    if (countEl) countEl.textContent = `${players.length} ONLINE`;
 
     if (!currentUser) return;
 
     const otherPlayers = players.filter(p => p.id !== currentUser.id);
-    const availableOpponents = otherPlayers.filter(p => p.status === 'available');
+    const availableOpponents = otherPlayers.filter(p => p.status === 'available' || !p.status);
 
     // Detect new opponent joining lobby -> Play alert chime & show toast
     if (availableOpponents.length > lastKnownOpponentsCount && otherPlayers.length > 0) {
@@ -663,7 +793,11 @@
         `⚡ ${newestOpponent.username} is ONLINE and ready to play!`,
         '⚔️ PLAY NOW',
         () => {
-          socket.emit('challenge:send', { targetUserId: newestOpponent.id });
+          if (socket && socket.connected) {
+            socket.emit('challenge:send', { targetUserId: newestOpponent.id });
+          } else {
+            triggerP2pChallenge();
+          }
         }
       );
     }
@@ -673,10 +807,14 @@
     if (availableOpponents.length > 0 && quickBanner) {
       quickBanner.classList.remove('hidden');
       const opp = availableOpponents[0];
-      quickText.innerHTML = `<strong>${availableOpponents.length}</strong> Opponent(s) Available on Wi-Fi: <strong style="color:var(--neon-green);">${escapeHtml(opp.username)}</strong>`;
+      if (quickText) {
+        quickText.innerHTML = `<strong>${availableOpponents.length}</strong> Opponent(s) Available on Wi-Fi: <strong style="color:var(--neon-green);">${escapeHtml(opp.username)}</strong>`;
+      }
     } else if (quickBanner) {
       quickBanner.classList.add('hidden');
     }
+
+    if (!listEl) return;
 
     // Render Players List
     if (players.length <= 1) {
@@ -684,28 +822,36 @@
       listEl.innerHTML = `
         <div class="empty-state">
           <div style="font-size:28px;margin-bottom:8px;">📡</div>
-          <strong style="color:#fff;font-size:15px;">You are currently the only player in the arena lobby.</strong><br><br>
+          <strong style="color:#fff;font-size:15px;">Waiting for Warriors on the same Wi-Fi network...</strong><br><br>
           <span style="font-size:13px;color:var(--neon-cyan);">
-            To connect & play: Open <strong>${escapeHtml(playableUrl)}</strong> on your phone or scan the Wi-Fi QR code!
+            To connect & play: Scan the Wi-Fi QR code with a mobile phone or share the link:
+            <br><strong id="lobby-empty-url" style="color:#fff;word-break:break-all;">${escapeHtml(playableUrl)}</strong>
           </span>
-          <div style="margin-top:14px;">
+          <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
             <button class="cyber-btn sm neon-blue" onclick="document.getElementById('wifi-info-btn').click()">
               📶 View QR Code & Direct Link
+            </button>
+            <button id="btn-empty-join-code" class="cyber-btn sm neon-cyan">
+              🔑 Join by Room Code
             </button>
           </div>
         </div>
       `;
+      const btnEmptyJoin = document.getElementById('btn-empty-join-code');
+      if (btnEmptyJoin) {
+        btnEmptyJoin.addEventListener('click', openJoinModal);
+      }
       return;
     }
 
     listEl.innerHTML = players.map(p => {
       const isSelf = p.id === currentUser.id;
-      const statusClass = `status-${p.status}`;
-      const statusLabel = p.status === 'available' ? 'READY TO PLAY' : (p.status === 'in_battle' ? 'IN BATTLE' : 'IN CHALLENGE');
+      const statusClass = `status-${p.status || 'available'}`;
+      const statusLabel = p.status === 'available' || !p.status ? 'READY TO PLAY' : (p.status === 'in_battle' ? 'IN BATTLE' : 'IN CHALLENGE');
       
       let actionBtn = '';
       if (!isSelf) {
-        if (p.status === 'available') {
+        if (p.status === 'available' || !p.status) {
           actionBtn = `<button class="cyber-btn sm neon-green btn-challenge btn-connect-play" data-user-id="${p.id}">⚔️ CONNECT & PLAY</button>`;
         } else {
           actionBtn = `<button class="cyber-btn sm" disabled style="opacity:0.4;cursor:not-allowed;">IN BATTLE</button>`;
@@ -715,14 +861,14 @@
       }
 
       return `
-        <div class="player-row-card ${!isSelf && p.status === 'available' ? 'ready-opponent-highlight' : ''}">
+        <div class="player-row-card ${!isSelf && (p.status === 'available' || !p.status) ? 'ready-opponent-highlight' : ''}">
           <div class="player-row-meta">
             <span class="player-row-avatar">${AVATARS[p.avatar] || '🥷'}</span>
             <div>
               <div class="player-row-name">${escapeHtml(p.username)} ${isSelf ? '<span style="font-size:11px;color:var(--neon-cyan);">(This Device)</span>' : ''}</div>
               <div class="player-row-sub">
-                <span>⭐ ${p.rating} PTS</span>
-                <span>🏆 ${p.wins}W</span>
+                <span>⭐ ${p.rating || 1000} PTS</span>
+                <span>🏆 ${p.wins || 0}W</span>
                 <span class="status-pill ${statusClass}">${statusLabel}</span>
               </div>
             </div>
@@ -737,22 +883,38 @@
       btn.addEventListener('click', () => {
         window.soundEngine.playClick();
         const targetUserId = btn.dataset.userId;
-        if (!socket || !socket.connected) {
-          showToast('⚠️ Arena server not connected. Connect both devices to the same Wi-Fi network.');
-          return;
+        if (socket && socket.connected) {
+          btn.textContent = 'TRANSMITTING...';
+          btn.disabled = true;
+          socket.emit('challenge:send', { targetUserId });
+          setTimeout(() => {
+            if (btn.textContent === 'TRANSMITTING...') {
+              btn.textContent = '⚔️ CONNECT & PLAY';
+              btn.disabled = false;
+            }
+          }, 5000);
+        } else if (p2pActiveConn && p2pRemoteOpponent) {
+          btn.textContent = 'TRANSMITTING...';
+          btn.disabled = true;
+          triggerP2pChallenge();
+          setTimeout(() => {
+            if (btn.textContent === 'TRANSMITTING...') {
+              btn.textContent = '⚔️ CONNECT & PLAY';
+              btn.disabled = false;
+            }
+          }, 5000);
+        } else {
+          showToast('⚠️ Waiting for second warrior on Wi-Fi. Scan the QR code with another phone!');
         }
-        btn.textContent = 'TRANSMITTING...';
-        btn.disabled = true;
-        socket.emit('challenge:send', { targetUserId });
-        setTimeout(() => {
-          if (btn.textContent === 'TRANSMITTING...') {
-            btn.textContent = '⚔️ CONNECT & PLAY';
-            btn.disabled = false;
-          }
-        }, 5000);
       });
     });
-  });
+  }
+
+  if (socket) {
+    socket.on('lobby:update', (players) => {
+      renderLobby(players);
+    });
+  }
 
   // 6. Challenge Sent & Waiting Dialog (30s timeout)
   socket.on('challenge:sent', ({ challengeId, target, timeoutSeconds }) => {
@@ -821,7 +983,25 @@
     window.soundEngine.playAccept();
     clearInterval(incomingChallengeTimer);
     hideModal('incomingChallenge');
-    if (currentIncomingChallengeId) {
+
+    if (p2pPendingChallenge && p2pActiveConn) {
+      p2pActiveConn.send({
+        type: 'challenge:response',
+        accepted: true
+      });
+      p2pActiveConn.send({
+        type: 'match:start_duel'
+      });
+      showModal('connectionSuccess');
+      setTimeout(() => {
+        hideModal('connectionSuccess');
+        startP2pDuel(false);
+      }, 1600);
+      p2pPendingChallenge = null;
+      return;
+    }
+
+    if (currentIncomingChallengeId && socket && socket.connected) {
       socket.emit('challenge:respond', {
         challengeId: currentIncomingChallengeId,
         accepted: true
@@ -833,7 +1013,17 @@
     window.soundEngine.playClick();
     clearInterval(incomingChallengeTimer);
     hideModal('incomingChallenge');
-    if (currentIncomingChallengeId) {
+
+    if (p2pPendingChallenge && p2pActiveConn) {
+      p2pActiveConn.send({
+        type: 'challenge:response',
+        accepted: false
+      });
+      p2pPendingChallenge = null;
+      return;
+    }
+
+    if (currentIncomingChallengeId && socket && socket.connected) {
       socket.emit('challenge:respond', {
         challengeId: currentIncomingChallengeId,
         accepted: false
@@ -1317,102 +1507,236 @@
     }
   }
 
-  // --- SERVERLESS P2P WEBRTC (PEERJS) ---
-  let peerInstance = null;
-  let p2pActiveConn = null;
+  // --- SERVERLESS AUTO-DISCOVERY P2P WEBRTC (PEERJS) ---
+  let p2pConnectRetryTimer = null;
+  let p2pConnectAttempts = 0;
+  let p2pPingInterval = null;
 
-  function initP2pPeer() {
-    if (peerInstance || typeof Peer === 'undefined') return;
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const myPeerId = 'neo-' + randomSuffix;
+  function initP2pArenaNetwork() {
+    if (peerInstance || typeof Peer === 'undefined' || isP2pConnecting) return;
+    isP2pConnecting = true;
+
+    const { room } = getOrCreateArenaRoom();
+    const hostPeerId = `neoarc-${room}-h`;
+
+    const roomDisplay = document.getElementById('lobby-room-code-display');
+    if (roomDisplay) roomDisplay.textContent = room;
+
     try {
-      peerInstance = new Peer(myPeerId);
+      console.log('[P2P] Attempting registration as HOST:', hostPeerId);
+      peerInstance = new Peer(hostPeerId, { debug: 1 });
+
       peerInstance.on('open', (id) => {
-        const display = document.getElementById('p2p-my-code-display');
-        if (display) display.textContent = id;
+        isP2pConnecting = false;
+        console.log('[P2P] Registered as room HOST with ID:', id);
+        // We are host: wait for guests to connect
       });
+
       peerInstance.on('connection', (conn) => {
+        console.log('[P2P] Host received guest connection!');
         setupP2pConnection(conn, false);
       });
+
       peerInstance.on('error', (err) => {
-        console.warn('Peer error:', err);
+        console.warn('[P2P] Peer error:', err.type, err);
+        if (err.type === 'unavailable-id') {
+          // Host ID already exists -> We are a GUEST!
+          try { peerInstance.destroy(); } catch (e) {}
+          const guestPeerId = `neoarc-${room}-g-${Math.random().toString(36).substring(2, 6)}`;
+          console.log('[P2P] Host ID occupied. Registering as GUEST:', guestPeerId);
+          peerInstance = new Peer(guestPeerId, { debug: 1 });
+
+          peerInstance.on('open', (gid) => {
+            isP2pConnecting = false;
+            console.log('[P2P] Registered as guest with ID:', gid);
+            p2pConnectAttempts = 0;
+            connectToPeerHost(hostPeerId);
+          });
+
+          peerInstance.on('connection', (conn) => {
+            setupP2pConnection(conn, false);
+          });
+
+          peerInstance.on('error', (gerr) => {
+            isP2pConnecting = false;
+            console.warn('[P2P] Guest peer error:', gerr);
+          });
+        } else {
+          isP2pConnecting = false;
+        }
       });
     } catch (e) {
-      console.warn('PeerJS init failed:', e);
+      isP2pConnecting = false;
+      console.warn('[P2P] Peer initialization exception:', e);
     }
   }
 
-  function openP2pModal() {
-    ensureUser();
-    initP2pPeer();
-    showModal('p2pRoom');
-  }
+  function connectToPeerHost(hostId) {
+    if (!peerInstance || peerInstance.destroyed) return;
+    if (p2pActiveConn && p2pActiveConn.open) return;
 
-  function connectToP2pPeer(targetPeerId) {
-    if (!peerInstance) initP2pPeer();
-    if (!targetPeerId) return;
-    showToast(`Connecting to peer ${targetPeerId}...`);
-    const conn = peerInstance.connect(targetPeerId);
-    setupP2pConnection(conn, true);
+    p2pConnectAttempts++;
+    console.log(`[P2P] Connecting to host (${p2pConnectAttempts}/10):`, hostId);
+    try {
+      const conn = peerInstance.connect(hostId, { reliable: true });
+      setupP2pConnection(conn, true);
+    } catch (e) {
+      console.warn('[P2P] Connect exception:', e);
+    }
+
+    clearTimeout(p2pConnectRetryTimer);
+    p2pConnectRetryTimer = setTimeout(() => {
+      if ((!p2pActiveConn || !p2pActiveConn.open) && p2pConnectAttempts < 10) {
+        connectToPeerHost(hostId);
+      }
+    }, 2500);
   }
 
   function setupP2pConnection(conn, isInitiator) {
     p2pActiveConn = conn;
-    conn.on('open', () => {
-      hideModal('p2pRoom');
-      showToast('⚡ P2P WebRTC Connection Established! Initializing Arena...');
-      ensureUser();
 
-      if (isInitiator) {
-        conn.send({ type: 'handshake', username: currentUser.username, avatar: currentUser.avatar });
-      }
+    conn.on('open', () => {
+      clearTimeout(p2pConnectRetryTimer);
+      p2pConnectAttempts = 0;
+      console.log('[P2P] WebRTC DataChannel OPEN! Handshaking...');
+      ensureUser();
+      conn.send({
+        type: 'lobby:handshake',
+        user: currentUser,
+        isHost: !isInitiator
+      });
+
+      // Keepalive ping every 10s to prevent mobile Wi-Fi sleep
+      clearInterval(p2pPingInterval);
+      p2pPingInterval = setInterval(() => {
+        if (conn && conn.open) {
+          try { conn.send({ type: 'ping' }); } catch (e) {}
+        }
+      }, 10000);
     });
 
     conn.on('data', (data) => {
-      handleP2pMessage(data);
+      handleP2pMessage(data, conn, isInitiator);
     });
 
     conn.on('close', () => {
-      showToast('P2P connection closed by remote peer.');
-      showScreen('lobby');
+      console.log('[P2P] Connection closed by remote peer.');
+      clearInterval(p2pPingInterval);
+      p2pActiveConn = null;
+      p2pRemoteOpponent = null;
+      renderP2pLobby();
+      showToast('Opponent disconnected from arena.');
+      if (screens.arena && screens.arena.classList.contains('active')) {
+        showScreen('lobby');
+      }
+    });
+
+    conn.on('error', (err) => {
+      console.warn('[P2P] Connection error:', err);
     });
   }
 
-  function handleP2pMessage(data) {
-    if (data.type === 'handshake') {
-      currentMatch = {
-        isP2p: true,
-        isHost: true,
-        matchId: 'p2p_' + Date.now(),
-        p1: { id: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, symbol: 'X' },
-        p2: { id: 'peer_opponent', username: data.username, avatar: data.avatar, symbol: 'O' },
-        scores: { [currentUser.id]: 0, 'peer_opponent': 0 },
-        currentRound: 1,
-        board: Array(9).fill(null),
-        currentTurn: currentUser.id
-      };
-      p2pActiveConn.send({ type: 'handshake_ack', username: currentUser.username, avatar: currentUser.avatar });
-      setupMatchArena(currentMatch.matchId, currentMatch.p1, currentMatch.p2, currentUser.id);
-    } else if (data.type === 'handshake_ack') {
-      currentMatch = {
-        isP2p: true,
-        isHost: false,
-        matchId: 'p2p_' + Date.now(),
-        p1: { id: 'peer_host', username: data.username, avatar: data.avatar, symbol: 'X' },
-        p2: { id: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, symbol: 'O' },
-        scores: { 'peer_host': 0, [currentUser.id]: 0 },
-        currentRound: 1,
-        board: Array(9).fill(null),
-        currentTurn: 'peer_host'
-      };
-      setupMatchArena(currentMatch.matchId, currentMatch.p1, currentMatch.p2, 'peer_host');
+  function handleP2pMessage(data, conn, isInitiator) {
+    if (!data || !data.type) return;
+
+    if (data.type === 'ping') {
+      if (conn && conn.open) conn.send({ type: 'pong' });
+      return;
+    }
+    if (data.type === 'pong') return;
+
+    if (data.type === 'lobby:handshake') {
+      p2pRemoteOpponent = data.user;
+      p2pRemoteOpponent.status = 'available';
+
+      if (!isInitiator) {
+        conn.send({
+          type: 'lobby:handshake_reply',
+          user: currentUser
+        });
+      }
+
+      renderP2pLobby();
+      window.soundEngine.playChallengeAlert();
+      showToast(`⚡ ${p2pRemoteOpponent.username} entered the arena! Ready to duel.`, '⚔️ PLAY NOW', () => {
+        triggerP2pChallenge();
+      });
+    } else if (data.type === 'lobby:handshake_reply') {
+      p2pRemoteOpponent = data.user;
+      p2pRemoteOpponent.status = 'available';
+      renderP2pLobby();
+      window.soundEngine.playChallengeAlert();
+      showToast(`⚡ Connected to ${p2pRemoteOpponent.username}! Ready to duel.`);
+    } else if (data.type === 'challenge:incoming') {
+      p2pPendingChallenge = data;
+      currentIncomingChallengeId = data.challengeId;
+      window.soundEngine.playChallengeAlert();
+
+      document.getElementById('invite-challenger-avatar').textContent = AVATARS[data.challenger.avatar] || '🥷';
+      document.getElementById('invite-challenger-name').textContent = data.challenger.username;
+
+      showModal('incomingChallenge');
+
+      let timeLeft = data.timeoutSeconds || 30;
+      const totalTime = timeLeft;
+      const timerText = document.getElementById('invite-timer-text');
+      const ring = document.getElementById('invite-timer-ring');
+      const circumference = 2 * Math.PI * 42;
+
+      ring.style.strokeDasharray = circumference;
+      ring.style.strokeDashoffset = 0;
+      timerText.textContent = `${timeLeft}s`;
+
+      clearInterval(incomingChallengeTimer);
+      incomingChallengeTimer = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0) {
+          clearInterval(incomingChallengeTimer);
+          hideModal('incomingChallenge');
+        } else {
+          timerText.textContent = `${timeLeft}s`;
+          const offset = circumference - (timeLeft / totalTime) * circumference;
+          ring.style.strokeDashoffset = offset;
+        }
+      }, 1000);
+    } else if (data.type === 'challenge:response') {
+      clearInterval(outgoingChallengeTimer);
+      hideModal('waitingChallenge');
+
+      if (data.accepted) {
+        window.soundEngine.playAccept();
+        showModal('connectionSuccess');
+        setTimeout(() => {
+          hideModal('connectionSuccess');
+          startP2pDuel(true); // challenger is P1
+        }, 1600);
+      } else {
+        showToast(`${p2pRemoteOpponent ? p2pRemoteOpponent.username : 'Opponent'} declined the duel.`);
+      }
+    } else if (data.type === 'match:start_duel') {
+      hideModal('incomingChallenge');
+      hideModal('waitingChallenge');
+      window.soundEngine.playAccept();
+      showModal('connectionSuccess');
+      setTimeout(() => {
+        hideModal('connectionSuccess');
+        startP2pDuel(false); // receiver is P2
+      }, 1600);
     } else if (data.type === 'symbol_chosen') {
-      currentMatch.p1.symbol = data.p1Symbol;
-      currentMatch.p2.symbol = data.p2Symbol;
-      document.getElementById('hud-p1-symbol').textContent = data.p1Symbol;
-      document.getElementById('hud-p2-symbol').textContent = data.p2Symbol;
+      if (currentMatch) {
+        currentMatch.p1.symbol = data.p1Symbol;
+        currentMatch.p2.symbol = data.p2Symbol;
+        document.getElementById('hud-p1-symbol').textContent = data.p1Symbol;
+        document.getElementById('hud-p2-symbol').textContent = data.p2Symbol;
+      }
     } else if (data.type === 'start_countdown') {
-      startLocalCountdown(currentMatch.roundName || 'ROUND 1', () => {
+      if (data.p1Symbol && currentMatch) {
+        currentMatch.p1.symbol = data.p1Symbol;
+        currentMatch.p2.symbol = data.p2Symbol;
+        document.getElementById('hud-p1-symbol').textContent = data.p1Symbol;
+        document.getElementById('hud-p2-symbol').textContent = data.p2Symbol;
+      }
+      startLocalCountdown(data.roundName || 'ROUND 1', () => {
         startLocalRound(1);
       });
     } else if (data.type === 'move') {
@@ -1430,7 +1754,91 @@
         btn.textContent = '⚔️ OPPONENT WANTS REMATCH! (CLICK TO ACCEPT)';
         btn.classList.add('neon-green');
       }
+    } else if (data.type === 'rematch_accepted') {
+      hideModal('victory');
+      startLocalRound(1, false);
+      showToast('⚔️ Rematch Accepted! Round 1 starting...');
     }
+  }
+
+  function triggerP2pChallenge() {
+    if (!p2pActiveConn || !p2pRemoteOpponent) {
+      showToast('⚠️ No warrior connected yet. Share the QR code or link with a friend on Wi-Fi!');
+      return;
+    }
+
+    document.getElementById('waiting-target-name').textContent = p2pRemoteOpponent.username;
+    showModal('waitingChallenge');
+
+    let remaining = 30;
+    const timerText = document.getElementById('waiting-timer-text');
+    timerText.textContent = `Expires in ${remaining}s`;
+
+    clearInterval(outgoingChallengeTimer);
+    outgoingChallengeTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(outgoingChallengeTimer);
+        hideModal('waitingChallenge');
+      } else {
+        timerText.textContent = `Expires in ${remaining}s`;
+      }
+    }, 1000);
+
+    p2pActiveConn.send({
+      type: 'challenge:incoming',
+      challengeId: 'chal_' + Date.now(),
+      challenger: currentUser,
+      timeoutSeconds: 30
+    });
+  }
+
+  function startP2pDuel(isP1) {
+    const p1User = isP1 ? currentUser : p2pRemoteOpponent;
+    const p2User = isP1 ? p2pRemoteOpponent : currentUser;
+
+    const p1 = { id: p1User.id, username: p1User.username, avatar: p1User.avatar, symbol: 'X' };
+    const p2 = { id: p2User.id, username: p2User.username, avatar: p2User.avatar, symbol: 'O' };
+
+    currentMatch = {
+      isP2p: true,
+      isLocal: false,
+      isAiMatch: false,
+      matchId: 'p2p_' + Date.now(),
+      p1,
+      p2,
+      scores: { [p1.id]: 0, [p2.id]: 0 },
+      currentRound: 1,
+      roundName: 'ROUND 1',
+      board: Array(9).fill(null),
+      currentTurn: p1.id,
+      roundsPlayed: 0,
+      clashesCount: 0
+    };
+
+    setupMatchArena(currentMatch.matchId, p1, p2, p1.id);
+  }
+
+  function renderP2pLobby() {
+    if (!currentUser) return;
+    if (p2pRemoteOpponent) {
+      renderLobby([currentUser, p2pRemoteOpponent]);
+    } else {
+      renderLobby([currentUser]);
+    }
+  }
+
+  function openP2pModal() {
+    ensureUser();
+    initP2pArenaNetwork();
+    showModal('p2pRoom');
+  }
+
+  function connectToP2pPeer(targetPeerId) {
+    if (!peerInstance) initP2pArenaNetwork();
+    if (!targetPeerId) return;
+    showToast(`Connecting to peer ${targetPeerId}...`);
+    connectToPeerHost(targetPeerId);
   }
 
   function handleP2pCellClick(index) {
@@ -1705,51 +2113,91 @@
   document.getElementById('btn-request-rematch').addEventListener('click', () => {
     window.soundEngine.playClick();
     if (!currentMatch) return;
-    socket.emit('game:rematch_request', { matchId: currentMatch.matchId });
-    document.getElementById('btn-request-rematch').textContent = '⏳ WAITING FOR OPPONENT...';
+
+    if (currentMatch.isP2p) {
+      const btn = document.getElementById('btn-request-rematch');
+      if (btn.classList.contains('neon-green')) {
+        btn.classList.remove('neon-green');
+        btn.textContent = '⚔️ REQUEST REMATCH';
+        if (p2pActiveConn && p2pActiveConn.open) {
+          p2pActiveConn.send({ type: 'rematch_accepted' });
+        }
+        hideModal('victory');
+        startLocalRound(1, false);
+        showToast('⚔️ Rematch Accepted! Round 1 starting...');
+      } else {
+        btn.textContent = '⏳ WAITING FOR OPPONENT...';
+        if (p2pActiveConn && p2pActiveConn.open) {
+          p2pActiveConn.send({ type: 'rematch_request' });
+        }
+      }
+      return;
+    }
+
+    if (socket && socket.connected) {
+      socket.emit('game:rematch_request', { matchId: currentMatch.matchId });
+      document.getElementById('btn-request-rematch').textContent = '⏳ WAITING FOR OPPONENT...';
+    } else {
+      hideModal('victory');
+      startLocalRound(1, false);
+    }
   });
 
-  socket.on('game:rematch_requested_by_opponent', () => {
-    const btn = document.getElementById('btn-request-rematch');
-    btn.textContent = '⚔️ OPPONENT WANTS REMATCH! (CLICK TO ACCEPT)';
-    btn.classList.add('neon-green');
-  });
+  if (socket) {
+    socket.on('game:rematch_requested_by_opponent', () => {
+      const btn = document.getElementById('btn-request-rematch');
+      if (btn) {
+        btn.textContent = '⚔️ OPPONENT WANTS REMATCH! (CLICK TO ACCEPT)';
+        btn.classList.add('neon-green');
+      }
+    });
 
-  socket.on('game:rematch_agreed', ({ matchId, p1, p2, hostId }) => {
-    hideModal('victory');
-    setupMatchArena(matchId, p1, p2, hostId);
-  });
+    socket.on('game:rematch_agreed', ({ matchId, p1, p2, hostId }) => {
+      hideModal('victory');
+      setupMatchArena(matchId, p1, p2, hostId);
+    });
+
+    socket.on('game:player_disconnected', ({ message }) => {
+      alert(message || 'Opponent disconnected from arena.');
+      hideModal('victory');
+      showScreen('lobby');
+    });
+  }
 
   document.getElementById('btn-return-lobby').addEventListener('click', () => {
     window.soundEngine.playClick();
-    if (currentMatch) {
+    if (currentMatch && socket && socket.connected) {
       socket.emit('game:exit_to_lobby', { matchId: currentMatch.matchId });
     }
     hideModal('victory');
     showScreen('lobby');
+    if (currentMatch && currentMatch.isP2p) {
+      renderP2pLobby();
+    }
   });
 
   document.getElementById('btn-leave-arena').addEventListener('click', () => {
     if (confirm('Leave current combat arena and return to lobby?')) {
-      if (currentMatch) {
+      if (currentMatch && socket && socket.connected) {
         socket.emit('game:exit_to_lobby', { matchId: currentMatch.matchId });
       }
       showScreen('lobby');
+      if (currentMatch && currentMatch.isP2p) {
+        renderP2pLobby();
+      }
     }
   });
 
   document.getElementById('btn-surrender').addEventListener('click', () => {
     if (confirm('Surrender this arena match to your opponent?')) {
-      if (currentMatch) {
+      if (currentMatch && socket && socket.connected) {
         socket.emit('game:resign', { matchId: currentMatch.matchId });
+      } else if (currentMatch && currentMatch.isP2p) {
+        const oppId = currentUser.id === currentMatch.p1.id ? currentMatch.p2.id : currentMatch.p1.id;
+        const res = { winnerSymbol: currentUser.id === currentMatch.p1.id ? currentMatch.p2.symbol : currentMatch.p1.symbol };
+        handleLocalRoundEnd(res);
       }
     }
-  });
-
-  socket.on('game:player_disconnected', ({ message }) => {
-    alert(message || 'Opponent disconnected from arena.');
-    hideModal('victory');
-    showScreen('lobby');
   });
 
   // Strike line drawing helper
