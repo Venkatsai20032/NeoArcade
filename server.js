@@ -195,8 +195,21 @@ io.on('connection', (socket) => {
     // Check if another active device is already using this user account
     if (connectedUsers.has(user.id) && connectedUsers.get(user.id).socketId !== socket.id) {
       console.log(`[ARENA] Account ${user.username} already in use by socket ${connectedUsers.get(user.id).socketId}. Creating distinct player for socket ${socket.id}`);
-      const altName = `${username} (P2)`;
-      user = db.findOrCreateUser(altName, avatar || 'mecha_core');
+      const baseName = username || user.username || 'Warrior';
+      const altName = `${baseName} (P2)`;
+      user = db.findOrCreateUser(altName, avatar || user.avatar || 'mecha_core');
+      if (connectedUsers.has(user.id) && connectedUsers.get(user.id).socketId !== socket.id) {
+        user = {
+          ...user,
+          id: 'usr_' + Date.now().toString(36) + '_' + socket.id.substring(0, 4),
+          username: `${baseName} (${connectedUsers.size + 1})`
+        };
+      }
+    }
+
+    const oldUserId = socketToUser.get(socket.id);
+    if (oldUserId && oldUserId !== user.id) {
+      connectedUsers.delete(oldUserId);
     }
 
     socketToUser.set(socket.id, user.id);
@@ -256,6 +269,11 @@ io.on('connection', (socket) => {
 
     if (!senderSession || !targetSession) {
       socket.emit('challenge:failed', { message: 'Target player is no longer online.' });
+      return;
+    }
+
+    if (senderId === targetUserId) {
+      socket.emit('challenge:failed', { message: 'Cannot challenge your own device.' });
       return;
     }
 

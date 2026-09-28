@@ -44,6 +44,14 @@
   let incomingChallengeTimer = null;
   let outgoingChallengeTimer = null;
   let countdownInterval = null;
+  let hostAutoEngageTimer = null;
+
+  // Tab-specific session ID to ensure distinct identities across multiple tabs/windows on the same device
+  let currentTabId = sessionStorage.getItem('neo_tic_tab_id');
+  if (!currentTabId) {
+    currentTabId = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
+    sessionStorage.setItem('neo_tic_tab_id', currentTabId);
+  }
 
   // Arena Room & P2P Networking State
   let currentArenaRoom = '';
@@ -394,6 +402,8 @@
   if (socket) {
     socket.on('user:registered', ({ user, network }) => {
       currentUser = user;
+      sessionStorage.setItem('neo_tic_tab_user_id', user.id);
+      sessionStorage.setItem('neo_tic_tab_user', JSON.stringify(user));
       localStorage.setItem('neo_tic_user_id', user.id);
       localStorage.setItem('neo_tic_username', user.username);
       localStorage.setItem('neo_tic_avatar', user.avatar);
@@ -467,7 +477,7 @@
 
   // Socket Connection & Automatic Registration
   function sendRegistration() {
-    const cachedId = localStorage.getItem('neo_tic_user_id');
+    const cachedId = sessionStorage.getItem('neo_tic_tab_user_id') || localStorage.getItem('neo_tic_user_id');
     const cachedName = localStorage.getItem('neo_tic_username');
     const cachedAvatar = localStorage.getItem('neo_tic_avatar') || 'cyber_ninja';
 
@@ -782,7 +792,13 @@
 
     if (!currentUser) return;
 
-    const otherPlayers = players.filter(p => p.id !== currentUser.id);
+    // Guaranteed single self index: exactly ONE row in the lobby represents 'This Device'
+    let selfIndex = players.findIndex(p => p.id === currentUser.id);
+    if (selfIndex === -1 && currentUser.username) {
+      selfIndex = players.findIndex(p => p.username && p.username.toLowerCase() === currentUser.username.toLowerCase());
+    }
+
+    const otherPlayers = players.filter((p, idx) => idx !== selfIndex);
     const availableOpponents = otherPlayers.filter(p => p.status === 'available' || !p.status);
 
     // Detect new opponent joining lobby -> Play alert chime & show toast
@@ -844,15 +860,18 @@
       return;
     }
 
-    listEl.innerHTML = players.map(p => {
-      const isSelf = p.id === currentUser.id;
+    listEl.innerHTML = players.map((p, index) => {
+      const isSelf = index === selfIndex;
+      const isAvailable = p.status === 'available' || !p.status;
       const statusClass = `status-${p.status || 'available'}`;
-      const statusLabel = p.status === 'available' || !p.status ? 'READY TO PLAY' : (p.status === 'in_battle' ? 'IN BATTLE' : 'IN CHALLENGE');
+      const statusLabel = isAvailable ? 'READY TO PLAY' : (p.status === 'in_battle' ? 'IN BATTLE' : 'IN CHALLENGE');
       
+      const effectiveUserId = isSelf ? p.id : (p.id === currentUser.id ? `${p.id}_opp_${index}` : p.id);
+
       let actionBtn = '';
       if (!isSelf) {
-        if (p.status === 'available' || !p.status) {
-          actionBtn = `<button class="cyber-btn sm neon-green btn-challenge btn-connect-play" data-user-id="${p.id}">⚔️ CONNECT & PLAY</button>`;
+        if (isAvailable) {
+          actionBtn = `<button class="cyber-btn sm neon-green btn-challenge btn-connect-play" data-user-id="${effectiveUserId}" data-username="${escapeHtml(p.username)}">⚔️ CONNECT & PLAY</button>`;
         } else {
           actionBtn = `<button class="cyber-btn sm" disabled style="opacity:0.4;cursor:not-allowed;">IN BATTLE</button>`;
         }
@@ -860,12 +879,20 @@
         actionBtn = `<span class="badge-you">(YOU - ONLINE)</span>`;
       }
 
+      const cardClasses = [
+        'player-row-card',
+        !isSelf && isAvailable ? 'ready-opponent-card ready-opponent-highlight' : ''
+      ].filter(Boolean).join(' ');
+
       return `
-        <div class="player-row-card ${!isSelf && (p.status === 'available' || !p.status) ? 'ready-opponent-highlight' : ''}">
+        <div class="${cardClasses}" data-is-opponent="${!isSelf && isAvailable ? 'true' : 'false'}" data-user-id="${effectiveUserId}" data-username="${escapeHtml(p.username)}" title="${!isSelf && isAvailable ? 'Click anywhere to challenge & play!' : ''}">
           <div class="player-row-meta">
             <span class="player-row-avatar">${AVATARS[p.avatar] || '🥷'}</span>
             <div>
-              <div class="player-row-name">${escapeHtml(p.username)} ${isSelf ? '<span style="font-size:11px;color:var(--neon-cyan);">(This Device)</span>' : ''}</div>
+              <div class="player-row-name">
+                ${escapeHtml(p.username)} 
+                ${isSelf ? '<span class="this-device-tag">(This Device)</span>' : ''}
+              </div>
               <div class="player-row-sub">
                 <span>⭐ ${p.rating || 1000} PTS</span>
                 <span>🏆 ${p.wins || 0}W</span>
@@ -878,34 +905,60 @@
       `;
     }).join('');
 
-    // Attach challenge click handlers
-    listEl.querySelectorAll('.btn-challenge').forEach(btn => {
-      btn.addEventListener('click', () => {
-        window.soundEngine.playClick();
-        const targetUserId = btn.dataset.userId;
-        if (socket && socket.connected) {
-          btn.textContent = 'TRANSMITTING...';
-          btn.disabled = true;
-          socket.emit('challenge:send', { targetUserId });
-          setTimeout(() => {
-            if (btn.textContent === 'TRANSMITTING...') {
-              btn.textContent = '⚔️ CONNECT & PLAY';
-              btn.disabled = false;
-            }
-          }, 5000);
-        } else if (p2pActiveConn && p2pRemoteOpponent) {
-          btn.textContent = 'TRANSMITTING...';
-          btn.disabled = true;
-          triggerP2pChallenge();
-          setTimeout(() => {
-            if (btn.textContent === 'TRANSMITTING...') {
-              btn.textContent = '⚔️ CONNECT & PLAY';
-              btn.disabled = false;
-            }
-          }, 5000);
-        } else {
-          showToast('⚠️ Waiting for second warrior on Wi-Fi. Scan the QR code with another phone!');
+    function executeChallenge(targetUserId, targetUsername, btn) {
+      if (!targetUserId) return;
+      window.soundEngine.playClick();
+
+      if (btn) {
+        btn.textContent = 'TRANSMITTING...';
+        btn.disabled = true;
+      }
+
+      showToast(`📡 Transmitting battle challenge to ${targetUsername || 'opponent'}...`);
+
+      if (socket && socket.connected) {
+        socket.emit('challenge:send', { targetUserId });
+        setTimeout(() => {
+          if (btn && btn.textContent === 'TRANSMITTING...') {
+            btn.textContent = '⚔️ CONNECT & PLAY';
+            btn.disabled = false;
+          }
+        }, 6000);
+      } else if (p2pActiveConn && p2pRemoteOpponent) {
+        triggerP2pChallenge();
+        setTimeout(() => {
+          if (btn && btn.textContent === 'TRANSMITTING...') {
+            btn.textContent = '⚔️ CONNECT & PLAY';
+            btn.disabled = false;
+          }
+        }, 6000);
+      } else {
+        showToast('⚠️ Waiting for warrior on Wi-Fi. Scan the QR code with another phone!');
+        if (btn) {
+          btn.textContent = '⚔️ CONNECT & PLAY';
+          btn.disabled = false;
         }
+      }
+    }
+
+    // Attach challenge click handlers to entire opponent card
+    listEl.querySelectorAll('.ready-opponent-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-challenge')) return;
+        const targetUserId = card.dataset.userId;
+        const targetUsername = card.dataset.username;
+        const btn = card.querySelector('.btn-challenge');
+        executeChallenge(targetUserId, targetUsername, btn);
+      });
+    });
+
+    // Attach click handlers to challenge buttons
+    listEl.querySelectorAll('.btn-challenge').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetUserId = btn.dataset.userId;
+        const targetUsername = btn.dataset.username;
+        executeChallenge(targetUserId, targetUsername, btn);
       });
     });
   }
@@ -913,6 +966,16 @@
   if (socket) {
     socket.on('lobby:update', (players) => {
       renderLobby(players);
+    });
+
+    socket.on('challenge:failed', ({ message }) => {
+      showToast(`⚠️ ${message || 'Challenge failed.'}`);
+      document.querySelectorAll('.btn-challenge').forEach(btn => {
+        if (btn.textContent === 'TRANSMITTING...') {
+          btn.textContent = '⚔️ CONNECT & PLAY';
+          btn.disabled = false;
+        }
+      });
     });
   }
 
@@ -1111,10 +1174,21 @@
     pickerDock.classList.remove('hidden');
     gameplayDock.classList.add('hidden');
 
+    clearTimeout(hostAutoEngageTimer);
+
     if (isHost) {
       document.getElementById('picker-instruction-text').textContent = 'HOST: CHOOSE COMBAT SYMBOL & ENGAGE:';
       document.getElementById('host-symbol-buttons').style.display = 'flex';
       document.getElementById('btn-lock-symbol').style.display = 'inline-flex';
+
+      // Auto-engage fallback (12s) so neither warrior is stuck if host delays clicking
+      hostAutoEngageTimer = setTimeout(() => {
+        const btnLock = document.getElementById('btn-lock-symbol');
+        if (btnLock && btnLock.style.display !== 'none' && !pickerDock.classList.contains('hidden')) {
+          console.log('[ARENA] Auto-engaging battlefield after symbol selection timeout...');
+          btnLock.click();
+        }
+      }, 12000);
     } else {
       document.getElementById('picker-instruction-text').textContent = 'AWAITING HOST SYMBOL SELECTION & ENGAGEMENT...';
       document.getElementById('host-symbol-buttons').style.display = 'none';
@@ -1161,6 +1235,7 @@
 
   if (socket) {
     socket.on('match:symbols_assigned', ({ p1, p2, startingUserId }) => {
+      clearTimeout(hostAutoEngageTimer);
       if (!currentMatch) return;
       currentMatch.p1 = p1;
       currentMatch.p2 = p2;
@@ -1173,6 +1248,7 @@
 
   document.getElementById('btn-lock-symbol').addEventListener('click', () => {
     window.soundEngine.playClick();
+    clearTimeout(hostAutoEngageTimer);
     if (!currentMatch) return;
     if (currentMatch.isLocal) {
       startLocalCountdown(currentMatch.roundName || 'ROUND 1', () => {
@@ -1182,7 +1258,11 @@
     }
     if (currentMatch.isP2p) {
       if (p2pActiveConn && p2pActiveConn.open) {
-        p2pActiveConn.send({ type: 'start_countdown' });
+        p2pActiveConn.send({
+          type: 'start_countdown',
+          p1Symbol: currentMatch.p1.symbol,
+          p2Symbol: currentMatch.p2.symbol
+        });
       }
       startLocalCountdown(currentMatch.roundName || 'ROUND 1', () => {
         startLocalRound(1);
@@ -1648,6 +1728,12 @@
     if (data.type === 'lobby:handshake') {
       p2pRemoteOpponent = data.user;
       p2pRemoteOpponent.status = 'available';
+      if (p2pRemoteOpponent.id === currentUser.id) {
+        p2pRemoteOpponent.id = p2pRemoteOpponent.id + '_peer';
+        if (!p2pRemoteOpponent.username.includes('(Peer)')) {
+          p2pRemoteOpponent.username += ' (Peer)';
+        }
+      }
 
       if (!isInitiator) {
         conn.send({
@@ -1664,6 +1750,12 @@
     } else if (data.type === 'lobby:handshake_reply') {
       p2pRemoteOpponent = data.user;
       p2pRemoteOpponent.status = 'available';
+      if (p2pRemoteOpponent.id === currentUser.id) {
+        p2pRemoteOpponent.id = p2pRemoteOpponent.id + '_peer';
+        if (!p2pRemoteOpponent.username.includes('(Peer)')) {
+          p2pRemoteOpponent.username += ' (Peer)';
+        }
+      }
       renderP2pLobby();
       window.soundEngine.playChallengeAlert();
       showToast(`⚡ Connected to ${p2pRemoteOpponent.username}! Ready to duel.`);
@@ -1820,8 +1912,18 @@
   }
 
   function renderP2pLobby() {
+    if (socket && socket.connected) {
+      // Socket.io is authoritative when connected; avoid clobbering server lobby
+      return;
+    }
     if (!currentUser) return;
     if (p2pRemoteOpponent) {
+      if (p2pRemoteOpponent.id === currentUser.id) {
+        p2pRemoteOpponent.id = p2pRemoteOpponent.id + '_peer';
+        if (!p2pRemoteOpponent.username.includes('(Peer)')) {
+          p2pRemoteOpponent.username += ' (Peer)';
+        }
+      }
       renderLobby([currentUser, p2pRemoteOpponent]);
     } else {
       renderLobby([currentUser]);
